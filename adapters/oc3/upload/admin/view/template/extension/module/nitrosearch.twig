@@ -1,0 +1,56 @@
+{#
+ # Copyright (c) WebDeviAnt Studios.
+ #
+ # This source file is subject to the GNU General Public License v3.0 (GPL-3.0)
+ # that is bundled with this package in the file LICENSE.
+ #
+ # OpenCart 3 admin markup — Bootstrap 3. The OpenCart 4 build carries the same
+ # screen against Bootstrap 5, which is why this file has a twin rather than being
+ # shared: the two admin themes disagree on panel/card, pull-right/float-end and
+ # the whole grid vocabulary.
+ #}
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header">
+    <div class="container-fluid">
+      <div class="pull-right">
+        <a href="{{ back }}" data-toggle="tooltip" title="{{ text_extension }}" class="btn btn-default"><i class="fa fa-reply"></i></a>
+      </div>
+      <h1>{{ heading_title }}</h1>
+      <ul class="breadcrumb">
+        {% for breadcrumb in breadcrumbs %}
+          <li><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="container-fluid">
+    <div class="panel panel-default">
+      <div class="panel-heading">
+        <h3 class="panel-title"><i class="fa fa-search"></i> {{ text_edit }}</h3>
+      </div>
+      <div class="panel-body">
+
+        {% if connected %}
+          <div class="alert alert-success"><i class="fa fa-check-circle"></i> {{ text_connected }}</div>
+        {% else %}
+          <div class="alert alert-info"><i class="fa fa-info-circle"></i> {{ text_not_connected }}</div>
+        {% endif %}
+
+        <dl class="dl-horizontal">
+          <dt>{{ text_shop_url }}</dt>
+          <dd><code>{{ shop_url }}</code></dd>
+
+          <dt>{{ text_verify_url }}</dt>
+          <dd>
+            <a href="{{ verify_url }}" target="_blank" rel="noopener"><code>{{ verify_url }}</code></a>
+            <p class="help-block">{{ text_verify_help }}</p>
+          </dd>
+        </dl>
+
+      </div>
+    </div>
+  </div>
+</div>
+{{ footer }}

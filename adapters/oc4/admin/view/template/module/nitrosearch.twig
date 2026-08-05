@@ -1,0 +1,54 @@
+{#
+ # Copyright (c) WebDeviAnt Studios.
+ #
+ # This source file is subject to the GNU General Public License v3.0 (GPL-3.0)
+ # that is bundled with this package in the file LICENSE.
+ #
+ # OpenCart 4 admin markup — Bootstrap 5. The OpenCart 3 build carries the same
+ # screen against Bootstrap 3, which is why this file has a twin rather than being
+ # shared: the two admin themes disagree on card/panel, float-end/pull-right and
+ # the whole grid vocabulary.
+ #}
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header">
+    <div class="container-fluid">
+      <div class="float-end">
+        <a href="{{ back }}" data-bs-toggle="tooltip" title="{{ text_extension }}" class="btn btn-light"><i class="fa-solid fa-reply"></i></a>
+      </div>
+      <h1>{{ heading_title }}</h1>
+      <ol class="breadcrumb">
+        {% for breadcrumb in breadcrumbs %}
+          <li class="breadcrumb-item"><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>
+        {% endfor %}
+      </ol>
+    </div>
+  </div>
+
+  <div class="container-fluid">
+    <div class="card">
+      <div class="card-header"><i class="fa-solid fa-magnifying-glass"></i> {{ text_edit }}</div>
+      <div class="card-body">
+
+        {% if connected %}
+          <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> {{ text_connected }}</div>
+        {% else %}
+          <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> {{ text_not_connected }}</div>
+        {% endif %}
+
+        <dl class="row">
+          <dt class="col-sm-3">{{ text_shop_url }}</dt>
+          <dd class="col-sm-9"><code>{{ shop_url }}</code></dd>
+
+          <dt class="col-sm-3">{{ text_verify_url }}</dt>
+          <dd class="col-sm-9">
+            <a href="{{ verify_url }}" target="_blank" rel="noopener"><code>{{ verify_url }}</code></a>
+            <div class="form-text">{{ text_verify_help }}</div>
+          </dd>
+        </dl>
+
+      </div>
+    </div>
+  </div>
+</div>
+{{ footer }}
