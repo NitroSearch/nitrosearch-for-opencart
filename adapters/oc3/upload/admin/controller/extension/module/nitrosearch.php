@@ -10,7 +10,9 @@
 
 require_once DIR_SYSTEM . 'library/nitrosearch/autoload.php';
 
+use NitroSearch\Admin\Actions;
 use NitroSearch\Settings;
+use NitroSearch\Support\ShopUrl;
 
 /**
  * The Configure screen — OpenCart 3 build.
@@ -37,15 +39,19 @@ class ControllerExtensionModuleNitrosearch extends Controller
         $settings = new Settings($this->db);
         $token = $this->session->data['user_token'];
 
-        $data['heading_title'] = $this->language->get('heading_title');
-        $data['text_edit'] = $this->language->get('text_edit');
-        $data['text_not_connected'] = $this->language->get('text_not_connected');
-        $data['text_connected'] = $this->language->get('text_connected');
-        $data['text_shop_url'] = $this->language->get('text_shop_url');
-        $data['text_verify_url'] = $this->language->get('text_verify_url');
+        $data = array();
+        foreach (array('heading_title', 'text_extension', 'text_edit', 'text_connected', 'text_not_connected',
+                       'text_shop_url', 'text_verify_url', 'text_verify_help', 'text_home') as $key) {
+            $data[$key] = $this->language->get($key);
+        }
 
-        $data['connected'] = $settings->isConnected();
+        $actions = new Actions($settings, $this->shopUrl());
+        $data = array_merge($data, $actions->state());
+
         $data['shop_url'] = $this->shopUrl();
+        $data['action_connect'] = $this->url->link('extension/module/nitrosearch/connect', 'user_token=' . $token, true);
+        $data['action_refresh'] = $this->url->link('extension/module/nitrosearch/refresh', 'user_token=' . $token, true);
+        $data['action_disconnect'] = $this->url->link('extension/module/nitrosearch/disconnect', 'user_token=' . $token, true);
 
         // Shown so a merchant can confirm the endpoint answers from the OUTSIDE
         // before anything depends on it. A shop behind basic auth, a firewall or a
@@ -76,6 +82,63 @@ class ControllerExtensionModuleNitrosearch extends Controller
         $data['footer'] = $this->load->controller('common/footer');
 
         $this->response->setOutput($this->load->view('extension/module/nitrosearch', $data));
+    }
+
+    /** Connect this shop, then ask to be verified. */
+    public function connect()
+    {
+        $this->respondJson(function (Actions $actions) {
+            return $actions->connect();
+        });
+    }
+
+    /** Re-ask for verification and pick up the search key that follows it. */
+    public function refresh()
+    {
+        $this->respondJson(function (Actions $actions) {
+            return $actions->refresh();
+        });
+    }
+
+    /** Forget this shop's credentials locally. The service keeps the index. */
+    public function disconnect()
+    {
+        $this->respondJson(function (Actions $actions) {
+            return $actions->disconnect();
+        });
+    }
+
+    /**
+     * Run one action and emit its result as JSON.
+     *
+     * THE PERMISSION CHECK IS HERE AND NOT IN Actions, deliberately. Who may do a
+     * thing is the framework's question and differs between the majors; what the
+     * thing does is ours and does not. Skipping it would let any authenticated admin
+     * user — including a limited one — disconnect a shop.
+     *
+     * @param callable $run
+     */
+    private function respondJson($run)
+    {
+        $this->load->language('extension/module/nitrosearch');
+
+        if (!$this->user->hasPermission('modify', 'extension/module/nitrosearch')) {
+            $this->emit(array('ok' => false, 'error' => $this->language->get('error_permission')));
+
+            return;
+        }
+
+        $settings = new Settings($this->db);
+        $this->emit($run(new Actions($settings, $this->shopUrl())));
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function emit(array $payload)
+    {
+        $this->response->addHeader('Content-Type: application/json');
+        $this->response->setOutput(json_encode($payload));
     }
 
     /**
@@ -114,12 +177,13 @@ class ControllerExtensionModuleNitrosearch extends Controller
     /**
      * This shop's canonical base URL, as the service will see it.
      *
+     * Resolved from config.php's constants rather than a settings row — see
+     * {@see ShopUrl} for why `config_url` is the wrong place to look.
+     *
      * @return string
      */
     private function shopUrl()
     {
-        $url = $this->config->get('config_ssl') ? $this->config->get('config_ssl') : $this->config->get('config_url');
-
-        return rtrim((string) $url, '/');
+        return ShopUrl::resolve();
     }
 }

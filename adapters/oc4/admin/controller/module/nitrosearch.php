@@ -12,7 +12,9 @@ namespace Opencart\Admin\Controller\Extension\Nitrosearch\Module;
 
 require_once DIR_EXTENSION . 'nitrosearch/system/library/nitrosearch/autoload.php';
 
+use NitroSearch\Admin\Actions;
 use NitroSearch\Settings;
+use NitroSearch\Support\ShopUrl;
 
 /**
  * The Configure screen — OpenCart 4 build.
@@ -40,8 +42,19 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         $settings = new Settings($this->db);
         $token = $this->session->data['user_token'];
 
-        $data['connected'] = $settings->isConnected();
+        $data = array();
+        foreach (array('heading_title', 'text_extension', 'text_edit', 'text_connected', 'text_not_connected',
+                       'text_shop_url', 'text_verify_url', 'text_verify_help', 'text_home') as $key) {
+            $data[$key] = $this->language->get($key);
+        }
+
+        $actions = new Actions($settings, $this->shopUrl());
+        $data = array_merge($data, $actions->state());
+
         $data['shop_url'] = $this->shopUrl();
+        $data['action_connect'] = $this->url->link('extension/nitrosearch/module/nitrosearch.connect', 'user_token=' . $token);
+        $data['action_refresh'] = $this->url->link('extension/nitrosearch/module/nitrosearch.refresh', 'user_token=' . $token);
+        $data['action_disconnect'] = $this->url->link('extension/nitrosearch/module/nitrosearch.disconnect', 'user_token=' . $token);
 
         // Shown so a merchant can confirm the endpoint answers from the OUTSIDE
         // before anything depends on it. A shop behind basic auth, a firewall or a
@@ -72,6 +85,58 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         $data['footer'] = $this->load->controller('common/footer');
 
         $this->response->setOutput($this->load->view('extension/nitrosearch/module/nitrosearch', $data));
+    }
+
+    /** Connect this shop, then ask to be verified. */
+    public function connect(): void
+    {
+        $this->respondJson(fn (Actions $actions) => $actions->connect());
+    }
+
+    /** Re-ask for verification and pick up the search key that follows it. */
+    public function refresh(): void
+    {
+        $this->respondJson(fn (Actions $actions) => $actions->refresh());
+    }
+
+    /** Forget this shop's credentials locally. The service keeps the index. */
+    public function disconnect(): void
+    {
+        $this->respondJson(fn (Actions $actions) => $actions->disconnect());
+    }
+
+    /**
+     * Run one action and emit its result as JSON.
+     *
+     * THE PERMISSION CHECK IS HERE AND NOT IN Actions, deliberately. Who may do a
+     * thing is the framework's question and differs between the majors; what the
+     * thing does is ours and does not. Skipping it would let any authenticated admin
+     * user — including a limited one — disconnect a shop.
+     *
+     * The permission key is the EXTENSION-QUALIFIED route, which is what OpenCart 4
+     * granted at install time; the OpenCart 3 build's key is its own shorter form.
+     */
+    private function respondJson(callable $run): void
+    {
+        $this->load->language('extension/nitrosearch/module/nitrosearch');
+
+        if (!$this->user->hasPermission('modify', 'extension/nitrosearch/module/nitrosearch')) {
+            $this->emit(['ok' => false, 'error' => $this->language->get('error_permission')]);
+
+            return;
+        }
+
+        $settings = new Settings($this->db);
+        $this->emit($run(new Actions($settings, $this->shopUrl())));
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function emit(array $payload): void
+    {
+        $this->response->addHeader('Content-Type: application/json');
+        $this->response->setOutput(json_encode($payload));
     }
 
     /**
@@ -107,10 +172,14 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         $settings->purge();
     }
 
+    /**
+     * This shop's canonical base URL, as the service will see it.
+     *
+     * Resolved from config.php's constants rather than a settings row — see
+     * {@see ShopUrl} for why `config_url` is the wrong place to look.
+     */
     private function shopUrl(): string
     {
-        $url = $this->config->get('config_ssl') ?: $this->config->get('config_url');
-
-        return rtrim((string) $url, '/');
+        return ShopUrl::resolve();
     }
 }

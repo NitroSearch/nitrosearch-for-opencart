@@ -23,3 +23,8 @@ $_['text_verify_help']    = 'NitroSearch fetches this address from the outside t
 
 // Error
 $_['error_permission']    = 'Warning: You do not have permission to modify NitroSearch.';
+
+// Buttons
+$_['text_connect']        = 'Connect this shop';
+$_['text_refresh']        = 'Check status';
+$_['text_disconnect']     = 'Disconnect';

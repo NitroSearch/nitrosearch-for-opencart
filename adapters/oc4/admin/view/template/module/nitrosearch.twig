@@ -36,6 +36,16 @@
           <div class="alert alert-info"><i class="fa-solid fa-circle-info"></i> {{ text_not_connected }}</div>
         {% endif %}
 
+        <div id="ns-actions" class="mb-3">
+          {% if connected %}
+            <button type="button" id="ns-refresh" class="btn btn-primary" data-url="{{ action_refresh }}">{{ text_refresh }}</button>
+            <button type="button" id="ns-disconnect" class="btn btn-light" data-url="{{ action_disconnect }}">{{ text_disconnect }}</button>
+          {% else %}
+            <button type="button" id="ns-connect" class="btn btn-primary" data-url="{{ action_connect }}">{{ text_connect }}</button>
+          {% endif %}
+          <div id="ns-result" class="form-text"></div>
+        </div>
+
         <dl class="row">
           <dt class="col-sm-3">{{ text_shop_url }}</dt>
           <dd class="col-sm-9"><code>{{ shop_url }}</code></dd>
@@ -51,4 +61,30 @@
     </div>
   </div>
 </div>
+
+<script>
+// Both admin themes ship jQuery, so one script serves both builds. Every action
+// answers JSON and the page is reloaded on success rather than patched — the
+// screen's state comes from the server, and re-rendering it is both simpler and
+// impossible to get out of step with what was actually stored.
+$(function () {
+  $('#ns-actions').on('click', 'button[data-url]', function () {
+    var $b = $(this);
+    $b.prop('disabled', true);
+    $('#ns-result').text('…');
+    $.ajax({
+      url: $b.data('url'), type: 'POST', dataType: 'json',
+      success: function (json) {
+        if (json && json.ok) { location.reload(); return; }
+        $('#ns-result').text((json && json.error) ? json.error : 'Failed.');
+        $b.prop('disabled', false);
+      },
+      error: function (xhr) {
+        $('#ns-result').text('HTTP ' + xhr.status);
+        $b.prop('disabled', false);
+      }
+    });
+  });
+});
+</script>
 {{ footer }}
