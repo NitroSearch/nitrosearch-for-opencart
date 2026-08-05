@@ -50,6 +50,10 @@ class Cron extends \Opencart\System\Engine\Controller
 
         $runner = new Runner($this->db);
 
+        // The unattended heartbeat — see the OpenCart 3 build for why it is on the
+        // cron path as well as the page-load fallback. It has its own clock.
+        $runner->resyncCheck()->maybeRun();
+
         // Keep a full walk moving FIRST — see the OpenCart 3 build for why.
         $runner->fullSync()->resumeIfStalled();
 

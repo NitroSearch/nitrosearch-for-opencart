@@ -128,6 +128,25 @@ final class Runner
     }
 
     /**
+     * The unattended heartbeat — search-key renewal and re-send requests.
+     *
+     * ASSEMBLED HERE, LIKE EVERYTHING ELSE, so that both majors' cron controllers
+     * and the page-load fallback reach it identically. It is built from the same
+     * `Client` the drain uses, which means the shop url it signs with is resolved
+     * once rather than per caller.
+     *
+     * @return ResyncCheck
+     */
+    public function resyncCheck()
+    {
+        return new ResyncCheck(
+            $this->settings,
+            new Client($this->settings, ShopUrl::resolve()),
+            $this->fullSync()
+        );
+    }
+
+    /**
      * The shop's own currency and language, as the catalogue is priced and written.
      *
      * ⚠ THE LANGUAGE SETTING IS NAMED DIFFERENTLY IN EACH MAJOR, and neither stores

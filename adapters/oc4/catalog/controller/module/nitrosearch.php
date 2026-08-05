@@ -80,9 +80,13 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
 
             $output = $runner->storefront()->injectInto($output);
 
-            // The no-cron fallback. It returns immediately unless the interval has
-            // elapsed AND there is work, and defers the sending until after the
-            // shopper's page has been flushed — so this costs a page view nothing.
+            // The no-cron fallback, and the unattended heartbeat with it. It returns
+            // immediately unless the interval has elapsed and there is either sync
+            // work or a poll due, and defers everything to shutdown.
+            //
+            // ⚠ "AFTER THE PAGE" IS ONLY LITERALLY TRUE WHERE `fastcgi_finish_request`
+            // EXISTS — see the OpenCart 3 build. Every call the deferred work makes
+            // carries a short timeout for that reason.
             $runner->pageLoadTick()->maybeRun();
         } catch (\Exception $e) {
             // Nothing to do and nowhere safe to say it: a storefront page is not

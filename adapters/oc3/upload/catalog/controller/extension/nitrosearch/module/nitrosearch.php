@@ -107,6 +107,17 @@ class ControllerExtensionNitrosearchModuleNitrosearch extends Controller
 
         $runner = new Runner($this->db);
 
+        // The unattended heartbeat. IT BELONGS HERE AS WELL AS ON THE PAGE-LOAD
+        // FALLBACK, and for a reason worth stating: a shop with working cron never
+        // reaches the body of `PageLoadTick`, because the cron keeps `DRAIN_RAN_AT`
+        // fresh. Wiring the heartbeat only to the fallback would give it to shops
+        // that ignored the setup instructions and withhold it from the ones that
+        // followed them.
+        //
+        // It has its own five-minute clock, so calling it from a cron running every
+        // minute costs four cheap settings reads and one request.
+        $runner->resyncCheck()->maybeRun();
+
         // Keep a full walk moving FIRST. Enumeration feeds the queue the drain then
         // empties, so this order makes one invocation make progress on both rather
         // than draining an empty queue and stopping.
@@ -166,9 +177,16 @@ class ControllerExtensionNitrosearchModuleNitrosearch extends Controller
 
             $output = $runner->storefront()->injectInto($output);
 
-            // The no-cron fallback. It returns immediately unless the interval has
-            // elapsed AND there is work, and defers the sending until after the
-            // shopper's page has been flushed — so this costs a page view nothing.
+            // The no-cron fallback, and the unattended heartbeat with it. It returns
+            // immediately unless the interval has elapsed and there is either sync
+            // work or a poll due, and defers everything to shutdown.
+            //
+            // ⚠ "AFTER THE PAGE" IS ONLY LITERALLY TRUE WHERE `fastcgi_finish_request`
+            // EXISTS. Under mod_php it does not, and shutdown functions run BEFORE
+            // output buffers flush — so on those hosts the deferred work really is
+            // inside the shopper's request. That is why every call it makes carries a
+            // short timeout rather than the default: the honest claim is that this
+            // costs a page view very little, not nothing.
             $runner->pageLoadTick()->maybeRun();
         } catch (\Exception $e) {
             // Nothing to do and nowhere safe to say it: a storefront page is not

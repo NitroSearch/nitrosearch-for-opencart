@@ -55,6 +55,44 @@ WANTED="${1:-all}"
 
 say() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 ok()  { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
+die() { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+
+# ── Guards, before anything is packaged ──────────────────────────────────────
+#
+# Both run their own self-test first. A guard that has quietly stopped
+# discriminating is worse than no guard, because it reads as coverage — so the
+# build refuses to trust either one until it has watched it fail on purpose.
+say "Guards"
+
+# ⚠ STALE ARCHIVES ARE REMOVED BEFORE ANYTHING CAN FAIL. `dist/` is created above,
+# and the OpenCart 4 archive has a FIXED name — `nitrosearch.ocmod.zip`, because
+# the filename is the extension code — so a build that aborts after a previous
+# successful one leaves last version's archive sitting under the exact name that
+# gets attached to a release. Nothing downstream can tell the difference.
+rm -f "$OUT/nitrosearch.ocmod.zip" "$OUT"/nitrosearch-oc3-*.ocmod.zip
+
+# Lint everything that ships, before it ships.
+#
+# This module had NO lint at all: a parse error anywhere in src/ built both
+# archives, exited 0, and shipped the unparseable file to merchants — where it is
+# a fatal on the first request that autoloads it. The sibling module has linted
+# from the start; this is parity, and it earns its place the moment any file here
+# is edited by hand.
+if command -v php >/dev/null 2>&1; then
+    while IFS= read -r file; do
+        php -l "$file" >/dev/null 2>&1 || die "PHP syntax error in $file"
+    done < <(find src adapters vendor -name '*.php' 2>/dev/null)
+    ok "every PHP file parses"
+else
+    die "php is not on PATH — refusing to build unlinted (this module shipped a parse error once precisely here)"
+fi
+
+for guard in check-script-escaping check-heartbeat; do
+    ./bin/"$guard".sh --self-test >/dev/null \
+        || die "${guard}.sh failed its own self-test — fix the guard before trusting this build"
+    ./bin/"$guard".sh \
+        || die "${guard}.sh refused this tree (see above)"
+done
 
 # The shared tree, listed once. Copied into both archives at the path each major's
 # installer can actually reach.

@@ -157,7 +157,11 @@ final class Client
      */
     public function status()
     {
-        $res = $this->signed('GET', '/v1/status', '');
+        // A SHORT BUDGET, because the unattended heartbeat calls this and that rides
+        // a shopper's page load on shops with no cron. Housekeeping does not get to
+        // hold a storefront request open for twenty seconds; the next tick is five
+        // minutes away and losing one costs nothing.
+        $res = $this->signed('GET', '/v1/status', '', 8);
         $body = is_array($res['json']) ? $res['json'] : array();
 
         $status = array(
@@ -201,7 +205,9 @@ final class Client
      */
     public function fetchSearchKey()
     {
-        $res = $this->signed('GET', '/v1/search-key', '');
+        // Bounded for the same reason as `status()`: the daily refresh rides a
+        // shopper's page load on shops with no cron.
+        $res = $this->signed('GET', '/v1/search-key', '', 8);
         if (!$res['ok']) {
             return array('ok' => false, 'error' => 'HTTP ' . $res['status']);
         }
@@ -217,6 +223,34 @@ final class Client
         $this->storeSearch($body);
 
         return array('ok' => true);
+    }
+
+    /**
+     * Confirm that a requested re-send has been started.
+     *
+     * The service keeps asking until it hears this, so the request survives a shop
+     * that was switched off, mid-upgrade, or simply not being visited. Returns
+     * whether it landed; the caller retries on the next heartbeat if it did not.
+     *
+     * A SHORTER TIMEOUT THAN THE INGEST CALLS, deliberately. This rides a shopper's
+     * page load on shops with no cron, and it is housekeeping — a service taking
+     * fifteen seconds to accept an acknowledgement is a service we should stop
+     * waiting for and try again in five minutes.
+     *
+     * @param string $token
+     *
+     * @return bool
+     */
+    public function acknowledgeResync($token)
+    {
+        $token = (string) $token;
+        if ($token === '') {
+            return false;
+        }
+
+        $res = $this->signed('POST', '/v1/resync/ack', json_encode(array('token' => $token)), 15);
+
+        return $res['ok'];
     }
 
     /**
@@ -337,7 +371,16 @@ final class Client
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_TIMEOUT, (int) $timeout);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+
+        // ⚠ THE CONNECT TIMEOUT IS BOUNDED BY THE OVERALL ONE, and that matters
+        // because some of these calls ride a shopper's page load on shops with no
+        // cron. A flat 10s connect budget meant a five-second housekeeping call
+        // could still hold a request open for ten — on hosts without
+        // `fastcgi_finish_request` (mod_php, which a lot of OpenCart shops run) the
+        // response has not been flushed at that point, so the shopper waits and an
+        // Apache worker stays occupied. A blackholed egress rule is enough to do it,
+        // and it costs nothing to be wrong about.
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, min(10, max(2, (int) $timeout)));
         // Redirects are NOT followed. A signed request's signature covers its path;
         // following a redirect would replay those headers at a different path, where
         // they are invalid — and would send the shop's credentials wherever the
@@ -353,7 +396,17 @@ final class Client
         $responseBody = curl_exec($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = (string) curl_error($ch);
-        curl_close($ch);
+
+        // ⚠ NO `curl_close($ch)`. It has done nothing since PHP 8.0 — the handle is
+        // an object freed when `$ch` goes out of scope at the end of this method —
+        // and PHP 8.5 DEPRECATED it, so calling it prints a notice on every single
+        // request the module makes.
+        //
+        // That is not cosmetic here. Two of this module's endpoints answer with JSON
+        // and nothing else, and the service treats a non-JSON body as a failed proof;
+        // a notice printed ahead of the payload corrupts it. On PHP 7 the handle is
+        // freed on scope exit just the same, so removing the call is safe on every
+        // version either major runs on.
 
         if ($responseBody === false) {
             return array('ok' => false, 'status' => 0, 'body' => '', 'error' => $error !== '' ? $error : 'request failed');

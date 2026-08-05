@@ -6,6 +6,35 @@ All notable changes to this module are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-08-05
+
+### Added
+
+- **Your shop now keeps itself connected without anyone pressing anything.** Every few minutes,
+  while your shop is being used or your scheduled sync runs, the module checks in with NitroSearch.
+  Three things depend on it, and none of them used to happen on their own:
+
+  - **Search keeps working.** The key your storefront searches with has a lifetime, and your shop
+    now fetches a fresh one once a day — long before the old one runs out. Previously a shop that
+    was simply left alone — which is a shop that is working properly — would eventually find
+    storefront search returning nothing at all, with no error and nothing on the Configure screen
+    to say why.
+  - **NitroSearch can ask for your catalogue again**, and now your shop hears it. If an item was
+    accepted but turned out to be unusable, this is what repairs it. The request is acted on once,
+    even if confirming it fails and has to be retried.
+  - **Verification completes on its own.** If NitroSearch confirms your shop while you are not
+    looking at the screen, your storefront picks up its search key by itself.
+
+  It costs a page view nothing: it runs after your shopper's page has been sent, has its own
+  five-minute clock, and a slow or unreachable service cannot delay a page or interrupt a sync.
+
+### Fixed
+
+- **Requests no longer emit a deprecation notice on PHP 8.5.** The module closed each network
+  handle explicitly, which has done nothing since PHP 8.0 and is deprecated as of 8.5. On a shop
+  with error display switched on, the notice could be printed into the response — including the
+  two endpoints that must answer with nothing but JSON.
+
 ## [1.0.0] — 2026-08-05
 
 First release. **Both current OpenCart majors are supported** — 4.0.x–4.1.x and 3.0.x — from two
@@ -52,5 +81,6 @@ months *after* 4.1.0.3, so neither line is a legacy one and neither is treated a
   your indexed catalogue is kept on the service, so reconnecting restores search without a re-sync.
   Uninstalling only the **archive** leaves settings alone.
 
-[Unreleased]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/NitroSearch/nitrosearch-for-opencart/releases/tag/v1.0.0

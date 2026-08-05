@@ -29,8 +29,11 @@ namespace NitroSearch\Sync;
  *  - **It claims the interval BEFORE doing any work.** Several page loads land in
  *    the same second on any real shop; without this they would all decide it was
  *    their turn and stampede the service with the same batch.
- *  - **It checks for work before scheduling any**, so the common case — an idle
- *    catalogue — costs one already-cached settings read and one COUNT.
+ *  - **It checks for something to do before scheduling anything**, so the common
+ *    case — an idle catalogue with a fresh status stamp — costs two already-cached
+ *    settings reads and one COUNT. "Something to do" is sync work OR a due
+ *    heartbeat, and the two are deliberately separate: gating the heartbeat on
+ *    there being sync work would starve exactly the shops that need it.
  *  - **It runs after the response**, behind `fastcgi_finish_request` where the
  *    host has it, so the shopper's page is already on its way.
  *  - **It cannot throw into a shopper's request.** A sync fault is ours; a 500 on
@@ -100,7 +103,19 @@ final class PageLoadTick
         $hasWork = $this->runner->outbox()->pendingCount() > 0
             || (bool) $settings->get('FULLSYNC_ACTIVE');
 
-        if (!$hasWork) {
+        // ⚠ THE HEARTBEAT IS A SECOND, INDEPENDENT REASON TO RUN, and collapsing the
+        // two into one condition is the bug this arrangement exists to prevent. A
+        // shop with an empty outbox and no active walk is not an idle shop worth
+        // skipping — it is the steady state of every healthy catalogue, and exactly
+        // the shop whose scoped search key quietly expires. Gating the status poll
+        // behind `$hasWork` would mean the shops that most need it are the only ones
+        // that never get it.
+        //
+        // `isDue()` is one already-cached settings read, so asking costs nothing on
+        // the overwhelming majority of page views where the answer is no.
+        $statusDue = $this->runner->resyncCheck()->isDue();
+
+        if (!$hasWork && !$statusDue) {
             return false;
         }
 
@@ -128,6 +143,17 @@ final class PageLoadTick
         }
 
         try {
+            // The heartbeat goes FIRST, and only partly because it is cheap. If the
+            // service is asking this shop to re-send, the poll is what starts the
+            // walk — so running it before the two lines below means the same tick
+            // that picks the request up also makes progress on it, instead of
+            // seeding a walk and then waiting another interval to advance it.
+            //
+            // It has its own clock and its own try/catch, so a service that is slow
+            // or unreachable delays nothing here beyond its own timeout, and cannot
+            // stop the sync below from running.
+            $runner->resyncCheck()->maybeRun();
+
             // Same order as the cron endpoint: keep the walk moving first, because
             // enumeration is what feeds the queue the drain then empties. Reversing
             // them makes one tick drain an empty queue and stop.

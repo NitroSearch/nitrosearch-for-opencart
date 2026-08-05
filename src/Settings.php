@@ -78,6 +78,19 @@ final class Settings
         'LAST_ERROR' => '',
         'DRAIN_TOKEN' => '',
         'DRAIN_RAN_AT' => 0,
+        // The unattended heartbeat's own clock, kept separate from DRAIN_RAN_AT on
+        // purpose: the drain stamp is claimed by every page-load tick whether or not
+        // there was anything to send, so sharing it would let a busy storefront
+        // starve the status poll indefinitely.
+        'STATUS_CHECKED_AT' => 0,
+        // The search-key refresh's own clock, separate from the poll's. They are two
+        // jobs on two intervals: `/v1/status` cannot deliver a key, so a shop that
+        // only ever polls holds the key it was issued at onboarding until it expires.
+        'CONFIG_REFRESHED_AT' => 0,
+        // The last re-sync request this shop has already acted on. Recorded so a
+        // confirmation that fails to arrive costs one retry rather than a second full
+        // walk of the catalogue.
+        'RESYNC_TOKEN_DONE' => '',
         // The full-walk cursor. Kept here rather than in its own table because it is
         // a handful of scalars that must survive exactly as long as the install.
         'FULLSYNC_ACTIVE' => false,
