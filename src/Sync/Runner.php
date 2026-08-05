@@ -12,6 +12,7 @@ namespace NitroSearch\Sync;
 
 use NitroSearch\Api\Client;
 use NitroSearch\Settings;
+use NitroSearch\Storefront\Widget;
 use NitroSearch\Support\ShopUrl;
 
 /**
@@ -94,6 +95,39 @@ final class Runner
     }
 
     /**
+     * The storefront widget block, built from the shop's own configuration.
+     *
+     * ASSEMBLED HERE FOR THE SAME REASON EVERYTHING ELSE IS: two adapters would
+     * otherwise each resolve the shop's url, currency and language by hand, and the
+     * two would drift. It also means the widget's currency and the currency the
+     * catalogue was serialised in are read from one place and cannot disagree —
+     * a mismatch there would render every price in the wrong currency's format.
+     *
+     * @return Widget
+     */
+    public function storefront()
+    {
+        $context = $this->context();
+
+        return new Widget(
+            $this->settings,
+            (string) $context['shop_url'],
+            (string) $context['currency'],
+            (string) $context['locale']
+        );
+    }
+
+    /**
+     * The no-cron fallback that rides a storefront page view.
+     *
+     * @return PageLoadTick
+     */
+    public function pageLoadTick()
+    {
+        return new PageLoadTick($this);
+    }
+
+    /**
      * The shop's own currency and language, as the catalogue is priced and written.
      *
      * ⚠ THE LANGUAGE SETTING IS NAMED DIFFERENTLY IN EACH MAJOR, and neither stores
@@ -136,6 +170,14 @@ final class Runner
                 : 'USD',
             'language_id' => $this->languageId($code),
             'language_code' => $catalogKey !== '' ? $catalogKey : '',
+            // THE SHOP'S LANGUAGE, WHICHEVER KEY HELD IT — and deliberately NOT
+            // `language_code` above, which is something else wearing a similar name.
+            // That one is empty on OpenCart 3 because it doubles as "do this shop's
+            // urls carry a language parameter", and reusing it here would leave every
+            // OpenCart 3 storefront formatting its prices by generic English
+            // conventions. OpenCart writes these as BCP-47 already (`en-gb`), which
+            // is the form the widget's Intl calls want.
+            'locale' => $code,
         );
     }
 

@@ -105,6 +105,9 @@ final class Client
         if (isset($decoded['widget']) && is_array($decoded['widget'])) {
             $this->storeWidget($decoded['widget']);
         }
+        if (isset($decoded['events']) && is_array($decoded['events'])) {
+            $this->storeEvents($decoded['events']);
+        }
 
         return array('ok' => true);
     }
@@ -398,6 +401,42 @@ final class Client
         if (isset($search['widget']) && is_array($search['widget'])) {
             $this->storeWidget($search['widget']);
         }
+        if (isset($search['events']) && is_array($search['events'])) {
+            $this->storeEvents($search['events']);
+        }
+    }
+
+    /**
+     * Persist the usage-beacon endpoint and this shop's public token.
+     *
+     * ⚠ THE BLOCK ARRIVES AT TWO DIFFERENT DEPTHS, and that is why this was missed
+     * entirely until the storefront widget needed it. `/v1/search-key` returns
+     * `events` as a SIBLING of the search fields it also returns, so it is reached
+     * through the same body this method's caller was handed; `/v1/connect` returns it
+     * at the TOP LEVEL of a body whose search block is nested one deeper. Reading
+     * only one of the two leaves the other silently unstored.
+     *
+     * WHAT IT COSTS TO GET WRONG IS INVISIBLE. Without these two values the widget
+     * simply omits `cfg.events` and no beacon is ever sent — no error, no warning,
+     * nothing on the Configure screen, just a store that reports no searches forever
+     * while its storefront search works perfectly.
+     *
+     * BOTH OR NEITHER. A url without a token is an endpoint the beacon cannot
+     * authenticate to, and a token without a url has nowhere to go; storing half of
+     * a pair is how a partial response becomes a permanent broken state.
+     *
+     * @param array<string, mixed> $events
+     */
+    private function storeEvents(array $events)
+    {
+        $url = self::pluck($events, array('url'));
+        $token = self::pluck($events, array('token'));
+
+        if ($url === '' || $token === '') {
+            return;
+        }
+
+        $this->settings->update(array('EVENTS_URL' => $url, 'EVENTS_TOKEN' => $token));
     }
 
     /**

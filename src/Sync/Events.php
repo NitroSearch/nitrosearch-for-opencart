@@ -59,6 +59,68 @@ final class Events
     }
 
     /**
+     * The storefront trigger, which is a different animal from the four above.
+     *
+     * THOSE ARE MODEL EVENTS IN THE ADMIN APPLICATION; this is a VIEW event in the
+     * catalog one, and the distinction decides where the row is registered. Each
+     * major's startup controller reads `oc_event` and keeps only the rows whose
+     * first segment names its own application — so the `catalog/` prefix here is
+     * what puts this on the storefront and keeps it out of the back office.
+     *
+     * ⚠ OPENCART 3 DOES NOT ACTUALLY FILTER. Its catalog startup controller strips
+     * the first segment of EVERY row, whatever it says, so the module's `admin/…`
+     * model triggers are also registered on the storefront — harmless, because the
+     * catalog application has no `addProduct` model method to fire them, but not
+     * something to rely on. OpenCart 4's startup controller does filter properly.
+     *
+     * `common/header` IS THE ONLY INJECTION POINT THE TWO MAJORS SHARE without
+     * editing a theme. Its rendered output is the whole document head, which is
+     * where a config blob has to be defined before the loader script runs.
+     * `document->addScript()` exists in both and takes a URL only, so there is
+     * nowhere to put the blob through it. OpenCart's own bundled Google extension
+     * injects its site tag through this identical trigger on OpenCart 3, which is
+     * the closest thing to a blessing the platform offers.
+     *
+     * THE ACTION IS NOT HERE, because it is the one part that genuinely differs:
+     * OpenCart 3 spells a controller method with a slash and OpenCart 4 with a dot,
+     * exactly as with the model triggers. Each adapter supplies its own.
+     *
+     * @return array{code: string, trigger: string}
+     */
+    public static function storefrontTrigger()
+    {
+        return array(
+            'code' => 'nitrosearch_storefront',
+            'trigger' => 'catalog/view/common/header/after',
+        );
+    }
+
+    /**
+     * Every event code this module registers.
+     *
+     * EXISTS SO UNINSTALL CANNOT MISS ONE. Both adapters used to delete events by
+     * rebuilding the code from the model trigger list, which silently could not see
+     * a code built any other way — and the storefront row is built another way. An
+     * event row outliving its handler is worse than an orphan setting: every page
+     * view calls a controller that is no longer there.
+     *
+     * @return array<int, string>
+     */
+    public static function codes()
+    {
+        $codes = array();
+
+        foreach (self::triggers() as $trigger) {
+            $codes[] = 'nitrosearch_' . $trigger['method'];
+        }
+
+        $storefront = self::storefrontTrigger();
+        $codes[] = $storefront['code'];
+
+        return $codes;
+    }
+
+    /**
      * Work out which product a fired event is about.
      *
      * THE ID IS IN A DIFFERENT PLACE DEPENDING ON THE METHOD, and getting it from

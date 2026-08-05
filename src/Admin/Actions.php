@@ -28,6 +28,15 @@ use NitroSearch\Sync\Runner;
  */
 final class Actions
 {
+    /**
+     * A NONCE THAT PROVES NOTHING, on purpose. The verify link exists so a merchant
+     * can confirm from a browser that their own endpoint answers at all — that it is
+     * not behind basic auth, a staging lock or a firewall. It is not a verification,
+     * and this value is a placeholder of the right SHAPE so the endpoint accepts it
+     * and returns JSON rather than `400 invalid_nonce`.
+     */
+    const SAMPLE_NONCE = '0123456789abcdef';
+
     /** @var Settings */
     private $settings;
 
@@ -36,6 +45,9 @@ final class Actions
 
     /** @var Runner */
     private $runner;
+
+    /** @var string this shop's storefront base url */
+    private $siteUrl;
 
     /**
      * REQUIRED, not optional. It began as a nullable extra so the connect-only
@@ -50,6 +62,7 @@ final class Actions
         $this->settings = $settings;
         $this->client = new Client($settings, $siteUrl);
         $this->runner = $runner;
+        $this->siteUrl = rtrim((string) $siteUrl, '/');
     }
 
     /**
@@ -164,18 +177,57 @@ final class Actions
      * Removing data on the service is a separate, explicit request — destroying a
      * catalogue should never be a side effect of a button labelled "disconnect".
      *
-     * The install id survives, so a reconnect is recognisably the same shop.
+     * TWO VALUES SURVIVE, and both for reasons that only show up later:
+     *
+     *  - **The install id**, so a reconnect is recognisably the same shop rather than
+     *    a new one.
+     *  - **The cron token**, because it is embedded in the url the merchant already
+     *    gave their host's scheduler. Purging it made that url answer `403 forbidden`
+     *    permanently — nothing re-minted it — and re-minting would have been no better:
+     *    the merchant's saved url would then be wrong rather than unauthorised, and
+     *    either way their catalogue quietly stops syncing with no error on any screen.
+     *    Found by disconnecting a shop in the sandbox and watching every subsequent
+     *    cron tick refuse.
      *
      * @return array{ok: bool}
      */
     public function disconnect()
     {
         $installId = $this->settings->installId();
+        $drainToken = $this->settings->drainToken();
 
         $this->settings->purge();
-        $this->settings->update(array('INSTALL_ID' => $installId));
+        $this->settings->update(array(
+            'INSTALL_ID' => $installId,
+            'DRAIN_TOKEN' => $drainToken,
+        ));
 
         return array('ok' => true);
+    }
+
+    /**
+     * The two urls the Configure screen shows a merchant.
+     *
+     * BUILT HERE RATHER THAN IN EACH ADAPTER, and that is [D-041]'s rule being
+     * applied rather than quoted: both controllers were already assembling the verify
+     * url by hand, identically, and a third url was about to be pasted into both. The
+     * route form is the one thing the two majors DO agree on — one address per
+     * capability — so there is nothing framework-shaped left for an adapter to hold.
+     *
+     * @return array{verify_url: string, cron_url: string}
+     */
+    public function urls()
+    {
+        $route = $this->siteUrl . '/index.php?route=extension/nitrosearch/module/nitrosearch/';
+
+        return array(
+            'verify_url' => $route . 'verify&nonce=' . self::SAMPLE_NONCE,
+            // CARRIES THE CRON TOKEN, because the whole point is that a merchant can
+            // copy this into their host's scheduler. Nothing else in this module hands
+            // it to them — before this the address existed, was the only way a shop
+            // could sync on a schedule, and appeared on no screen and in no document.
+            'cron_url' => $route . 'cron&token=' . $this->settings->drainToken(),
+        );
     }
 
     /**

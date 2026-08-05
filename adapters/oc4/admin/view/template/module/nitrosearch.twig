@@ -56,6 +56,17 @@
             <a href="{{ verify_url }}" target="_blank" rel="noopener"><code>{{ verify_url }}</code></a>
             <div class="form-text">{{ text_verify_help }}</div>
           </dd>
+
+          {# NOT A LINK, unlike the verify url above. This one carries the cron token,
+             and a browser that follows it hands that token to whatever the merchant's
+             referrer settings and history sync send it to — while doing a real drain
+             on the spot. It is for copying into a scheduler, so it is rendered as
+             text. #}
+          <dt class="col-sm-3">{{ text_cron_url }}</dt>
+          <dd class="col-sm-9">
+            <code class="user-select-all">{{ cron_url }}</code>
+            <div class="form-text">{{ text_cron_help }}</div>
+          </dd>
         </dl>
 
       </div>

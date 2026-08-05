@@ -195,6 +195,39 @@ final class Settings
     }
 
     /**
+     * The cron endpoint's shared secret, minted once and kept for the life of the
+     * install.
+     *
+     * MINTED LAZILY HERE RATHER THAN ONLY AT INSTALL, and that is a fix rather than a
+     * convenience. `install()` minted it and `disconnect()` purged it — so a merchant
+     * who disconnected and reconnected kept a cron job pointed at a url that answered
+     * `403 forbidden` from then on, forever, with nothing anywhere saying why. Their
+     * catalogue simply stopped syncing.
+     *
+     * IT MUST ALSO SURVIVE A DISCONNECT, which is why {@see \NitroSearch\Admin\Actions::disconnect()}
+     * carries it across alongside the install id. Re-minting would heal the 403 and
+     * still break them: the token is IN the url they gave their host's scheduler, and
+     * a new one makes that url wrong instead of unauthorised.
+     *
+     * NEVER DERIVED from the shop url or the install id — both are discoverable, and
+     * a guessable token turns this endpoint into an unauthenticated way to make a
+     * merchant's own server do unbounded work.
+     *
+     * @return string
+     */
+    public function drainToken()
+    {
+        $token = (string) $this->get('DRAIN_TOKEN');
+
+        if ($token === '') {
+            $token = bin2hex(random_bytes(16));
+            $this->update(array('DRAIN_TOKEN' => $token));
+        }
+
+        return $token;
+    }
+
+    /**
      * @return bool
      */
     public function isConnected()

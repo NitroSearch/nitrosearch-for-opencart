@@ -126,6 +126,59 @@ class ControllerExtensionNitrosearchModuleNitrosearch extends Controller
     }
 
     /**
+     * Put the storefront widget into the page, and keep the sync moving.
+     *
+     *   trigger  catalog/view/common/header/after
+     *   action   extension/nitrosearch/module/nitrosearch/onStorefront
+     *
+     * OpenCart hands a view event the rendered output BY REFERENCE and expects it to
+     * be changed in place. On this major the event system ALSO takes a returned value
+     * as a replacement for the whole output — and stops calling every other handler
+     * registered on the same trigger the moment one returns anything at all. So this
+     * returns nothing, ever. Returning the modified markup would work perfectly on a
+     * shop with no other extensions and silently disable theirs on every shop that
+     * has any.
+     *
+     * EVERY PARAMETER HAS A DEFAULT, and that is not tidiness. An event handler is a
+     * public controller method, so it is also a reachable url — `…?route=extension/
+     * nitrosearch/module/nitrosearch/onStorefront`. This major's dispatcher refuses a
+     * call with fewer arguments than the method requires and renders its 404 page, so
+     * defaults are belt-and-braces here; on OpenCart 4 they are load-bearing, and the
+     * two builds keeping the same signature is worth more than either one being
+     * minimal.
+     *
+     * IT CANNOT THROW. This runs while a shopper's page is being assembled: an
+     * exception escaping here is a blank storefront, which is a far worse outcome
+     * than a missing search box.
+     *
+     * @param string $route
+     * @param array  $data
+     * @param string $output the rendered header markup, modified in place
+     */
+    public function onStorefront(&$route = null, &$data = null, &$output = null)
+    {
+        if (!is_string($output) || $output === '') {
+            return;
+        }
+
+        try {
+            $runner = new Runner($this->db);
+
+            $output = $runner->storefront()->injectInto($output);
+
+            // The no-cron fallback. It returns immediately unless the interval has
+            // elapsed AND there is work, and defers the sending until after the
+            // shopper's page has been flushed — so this costs a page view nothing.
+            $runner->pageLoadTick()->maybeRun();
+        } catch (\Exception $e) {
+            // Nothing to do and nowhere safe to say it: a storefront page is not
+            // ours to interrupt, and the Configure screen's error slot is written by
+            // the paths that can reach a database.
+        } catch (\Throwable $e) {
+        }
+    }
+
+    /**
      * Emit JSON and stop.
      *
      * THE CONTENT TYPE IS PART OF THE CONTRACT. The service requires

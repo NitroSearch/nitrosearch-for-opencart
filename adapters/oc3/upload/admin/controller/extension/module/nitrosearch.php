@@ -44,25 +44,19 @@ class ControllerExtensionModuleNitrosearch extends Controller
 
         $data = array();
         foreach (array('heading_title', 'text_extension', 'text_edit', 'text_connected', 'text_not_connected',
-                       'text_shop_url', 'text_verify_url', 'text_verify_help', 'text_home') as $key) {
+                       'text_shop_url', 'text_verify_url', 'text_verify_help', 'text_cron_url',
+                       'text_cron_help', 'text_home') as $key) {
             $data[$key] = $this->language->get($key);
         }
 
         $actions = new Actions($settings, $this->shopUrl(), new Runner($this->db));
-        $data = array_merge($data, $actions->state());
+        $data = array_merge($data, $actions->state(), $actions->urls());
 
         $data['shop_url'] = $this->shopUrl();
         $data['action_connect'] = $this->url->link('extension/module/nitrosearch/connect', 'user_token=' . $token, true);
         $data['action_refresh'] = $this->url->link('extension/module/nitrosearch/refresh', 'user_token=' . $token, true);
         $data['action_disconnect'] = $this->url->link('extension/module/nitrosearch/disconnect', 'user_token=' . $token, true);
         $data['action_sync'] = $this->url->link('extension/module/nitrosearch/sync', 'user_token=' . $token, true);
-
-        // Shown so a merchant can confirm the endpoint answers from the OUTSIDE
-        // before anything depends on it. A shop behind basic auth, a firewall or a
-        // staging password will fail verification, and the difference between "our
-        // service is broken" and "your shop is not reachable from the internet" is
-        // worth being able to establish in one click.
-        $data['verify_url'] = $this->shopUrl() . '/index.php?route=extension/nitrosearch/module/nitrosearch/verify&nonce=0123456789abcdef';
 
         $data['breadcrumbs'] = array(
             array(
@@ -205,12 +199,23 @@ class ControllerExtensionModuleNitrosearch extends Controller
             );
         }
 
-        // A per-install cron token, minted once. Never derived from the shop URL or
-        // the install id — both are discoverable, and a guessable token makes the
-        // drain endpoint an unauthenticated way to load someone's server.
-        if ((string) $settings->get('DRAIN_TOKEN') === '') {
-            $settings->update(array('DRAIN_TOKEN' => bin2hex(random_bytes(16))));
-        }
+        // The storefront. A CATALOG event, unlike the four above, so its action names
+        // the catalog controller — `extension/nitrosearch/…`, where the back office
+        // half is `extension/module/…`. The two halves of this module following
+        // different directory conventions is OpenCart 3's arrangement, not ours, and
+        // this line is where it is easiest to get wrong.
+        $storefront = Events::storefrontTrigger();
+        $this->model_setting_event->addEvent(
+            $storefront['code'],
+            $storefront['trigger'],
+            'extension/nitrosearch/module/nitrosearch/onStorefront'
+        );
+
+        // A per-install cron token, minted once and kept for the life of the install
+        // — including across a disconnect, because it is embedded in the url the
+        // merchant gave their scheduler. Minted through Settings so install-time and
+        // any later caller share one path; see {@see Settings::drainToken()}.
+        $settings->drainToken();
     }
 
     /**
@@ -231,10 +236,15 @@ class ControllerExtensionModuleNitrosearch extends Controller
         $outbox->drop();
 
         // An event row outliving its handler is worse than useless: every product
-        // save would try to call a controller that no longer exists.
+        // save — and, for the storefront row, every page view — would try to call a
+        // controller that no longer exists.
+        //
+        // ASKS `Events` FOR THE CODES rather than rebuilding them from the trigger
+        // list, which is what this did and which could not see a code built any other
+        // way. The storefront row is built another way.
         $this->load->model('setting/event');
-        foreach (Events::triggers() as $trigger) {
-            $this->model_setting_event->deleteEventByCode('nitrosearch_' . $trigger['method']);
+        foreach (Events::codes() as $code) {
+            $this->model_setting_event->deleteEventByCode($code);
         }
     }
 

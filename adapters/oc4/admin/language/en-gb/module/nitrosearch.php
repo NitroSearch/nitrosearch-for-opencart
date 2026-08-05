@@ -20,6 +20,8 @@ $_['text_connected']      = 'This shop is connected to NitroSearch.';
 $_['text_shop_url']       = 'Shop address';
 $_['text_verify_url']     = 'Proof-of-control endpoint';
 $_['text_verify_help']    = 'NitroSearch fetches this address from the outside to confirm you control this shop. Opening it should return JSON. If your shop is behind a password, a firewall or a staging lock, it will not be reachable and verification cannot complete — that is a hosting setting, not a fault in this module.';
+$_['text_cron_url']       = 'Scheduled sync address';
+$_['text_cron_help']      = 'Point your hosting control panel\'s cron at this address every few minutes so catalogue changes reach NitroSearch promptly. It is safe to call as often as you like — it does a fixed amount of work and stops. Without a cron the shop still syncs, but only when someone visits it, and more slowly. Keep the address private: anyone who has it can make your shop sync.';
 
 // Error
 $_['error_permission']    = 'Warning: You do not have permission to modify NitroSearch.';
