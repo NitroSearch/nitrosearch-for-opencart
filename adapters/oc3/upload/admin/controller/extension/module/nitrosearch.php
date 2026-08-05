@@ -12,6 +12,7 @@ require_once DIR_SYSTEM . 'library/nitrosearch/autoload.php';
 
 use NitroSearch\Admin\Actions;
 use NitroSearch\Settings;
+use NitroSearch\Sync\Events;
 use NitroSearch\Sync\Outbox;
 use NitroSearch\Sync\Runner;
 use NitroSearch\Support\ShopUrl;
@@ -103,6 +104,29 @@ class ControllerExtensionModuleNitrosearch extends Controller
         });
     }
 
+    /**
+     * A product changed. Mark it dirty and return.
+     *
+     * DOES NO HTTP AND BUILDS NO PAYLOAD. This runs inside the merchant's own save,
+     * so anything slow here is slow for them, and anything that throws here breaks a
+     * product save outright. One INSERT … ON DUPLICATE KEY UPDATE is the whole job.
+     *
+     * @param string $route
+     * @param array  $args
+     * @param mixed  $output
+     */
+    public function onCatalogueChange($route, $args = array(), $output = null)
+    {
+        $change = Events::resolve($route, is_array($args) ? $args : array(), $output, $this->db);
+
+        if ($change === null) {
+            return;
+        }
+
+        $outbox = new Outbox($this->db);
+        $outbox->record('product', $change['id'], $change['op']);
+    }
+
     /** Queue the whole catalogue. The drain sends it. */
     public function sync()
     {
@@ -169,6 +193,18 @@ class ControllerExtensionModuleNitrosearch extends Controller
         // a product does not lose that first change to a missing table.
         $this->db->query(Outbox::schema());
 
+        // OpenCart 3 spells a trigger and an action with SLASHES throughout, matching
+        // its own router. OpenCart 4 uses a dot before the method in both. The rows
+        // differ; the handler they point at does not.
+        $this->load->model('setting/event');
+        foreach (Events::triggers() as $trigger) {
+            $this->model_setting_event->addEvent(
+                'nitrosearch_' . $trigger['method'],
+                $trigger['path'] . '/' . $trigger['method'] . '/after',
+                'extension/module/nitrosearch/onCatalogueChange'
+            );
+        }
+
         // A per-install cron token, minted once. Never derived from the shop URL or
         // the install id — both are discoverable, and a guessable token makes the
         // drain endpoint an unauthenticated way to load someone's server.
@@ -193,6 +229,13 @@ class ControllerExtensionModuleNitrosearch extends Controller
         // is an orphan table a merchant cannot identify or safely remove.
         $outbox = new Outbox($this->db);
         $outbox->drop();
+
+        // An event row outliving its handler is worse than useless: every product
+        // save would try to call a controller that no longer exists.
+        $this->load->model('setting/event');
+        foreach (Events::triggers() as $trigger) {
+            $this->model_setting_event->deleteEventByCode('nitrosearch_' . $trigger['method']);
+        }
     }
 
     /**
