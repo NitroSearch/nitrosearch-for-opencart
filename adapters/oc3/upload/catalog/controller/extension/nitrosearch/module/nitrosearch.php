@@ -11,6 +11,7 @@
 require_once DIR_SYSTEM . 'library/nitrosearch/autoload.php';
 
 use NitroSearch\Settings;
+use NitroSearch\Sync\Runner;
 use NitroSearch\Support\VerifyChallenge;
 
 /**
@@ -65,6 +66,63 @@ class ControllerExtensionNitrosearchModuleNitrosearch extends Controller
         }
 
         $this->respond(array('proof' => VerifyChallenge::proof($nonce, $secret)), 200);
+    }
+
+    /**
+     * The drain entry point.
+     *
+     *   index.php?route=extension/nitrosearch/module/nitrosearch/cron&token=…
+     *
+     * THE SAME URL THE OPENCART 4 BUILD ANSWERS, which is why this is a method here
+     * rather than a `cron.php` beside this file. OpenCart 3 pops path segments from
+     * the right until a controller exists, so `…/nitrosearch/cron` lands on this
+     * file's `cron()`; OpenCart 4 splits on the last dot, so the same url resolves one
+     * class deeper to `…\Module\Nitrosearch\Cron::index()`. Two shapes, one url —
+     * the same arrangement the verify endpoint uses, and the reason the service needs
+     * only one address per capability rather than one per major.
+     *
+     * A merchant points their host's cron at it every few minutes. Neither major has a
+     * job queue this can use, so a request IS the worker.
+     *
+     * TOKEN-GATED, WITH A CONSTANT-TIME COMPARISON. The token is not worth much on its
+     * own — the worst it buys an attacker is making us sync — but an unauthenticated
+     * endpoint that performs unbounded work is a free denial-of-service against the
+     * merchant's own server. `hash_equals` rather than `===` because a plain
+     * comparison leaks the token's prefix through timing.
+     */
+    public function cron()
+    {
+        $settings = new Settings($this->db);
+
+        $provided = isset($this->request->get['token']) ? (string) $this->request->get['token'] : '';
+        $expected = (string) $settings->get('DRAIN_TOKEN');
+
+        if ($expected === '' || $provided === '' || !hash_equals($expected, $provided)) {
+            $this->respond(array('error' => 'forbidden'), 403);
+        }
+
+        if (!$settings->isConnected()) {
+            $this->respond(array('error' => 'not_connected'), 409);
+        }
+
+        $runner = new Runner($this->db);
+
+        // Keep a full walk moving FIRST. Enumeration feeds the queue the drain then
+        // empties, so this order makes one invocation make progress on both rather
+        // than draining an empty queue and stopping.
+        $runner->fullSync()->resumeIfStalled();
+
+        $result = $runner->drain()->run(20);
+        $settings->update(array('DRAIN_RAN_AT' => time()));
+
+        $this->respond(array(
+            'ok' => true,
+            'batches' => $result['batches'],
+            'items' => $result['items'],
+            'stopped' => $result['stopped'],
+            'pending' => $result['pending'],
+            'full_sync_active' => $runner->fullSync()->isActive(),
+        ), 200);
     }
 
     /**

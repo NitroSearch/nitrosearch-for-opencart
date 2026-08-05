@@ -10,6 +10,7 @@
 
 namespace NitroSearch\Api;
 
+use NitroSearch\AdapterKit\Batch;
 use NitroSearch\Settings;
 use NitroSearch\Support\Hmac;
 
@@ -218,13 +219,21 @@ final class Client
     /**
      * Send one signed batch of catalogue changes.
      *
-     * @param array<int, array<string, mixed>> $items
+     * TAKES A `Batch`, NOT AN ARRAY, AND THAT IS THE FIX FOR A REAL BUG. This used to
+     * accept an array and wrap it as `['items' => …]` — but `Batch::toArray()` already
+     * returns that shape, so the caller handing one over produced
+     * `{"items":{"items":[…]}}`. Both are perfectly valid arrays, nothing local
+     * objected, and the service answered `422 items.0.data is required` on the first
+     * real send.
+     *
+     * Requiring the type makes the double wrap unrepresentable rather than merely
+     * corrected: there is no longer an array-shaped thing for a caller to pass.
      *
      * @return array{ok: bool, status: int, json: mixed, body: string, error: string}
      */
-    public function ingestBatch(array $items)
+    public function ingestBatch(Batch $batch)
     {
-        return $this->signed('POST', '/v1/ingest/batch', json_encode(array('items' => array_values($items))));
+        return $this->signed('POST', '/v1/ingest/batch', $batch->toJson());
     }
 
     /**

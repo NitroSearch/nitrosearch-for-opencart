@@ -28,3 +28,4 @@ $_['error_permission']    = 'Warning: You do not have permission to modify Nitro
 $_['text_connect']        = 'Connect this shop';
 $_['text_refresh']        = 'Check status';
 $_['text_disconnect']     = 'Disconnect';
+$_['text_sync']           = 'Sync catalogue now';

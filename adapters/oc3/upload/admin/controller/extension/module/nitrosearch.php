@@ -12,6 +12,8 @@ require_once DIR_SYSTEM . 'library/nitrosearch/autoload.php';
 
 use NitroSearch\Admin\Actions;
 use NitroSearch\Settings;
+use NitroSearch\Sync\Outbox;
+use NitroSearch\Sync\Runner;
 use NitroSearch\Support\ShopUrl;
 
 /**
@@ -45,13 +47,14 @@ class ControllerExtensionModuleNitrosearch extends Controller
             $data[$key] = $this->language->get($key);
         }
 
-        $actions = new Actions($settings, $this->shopUrl());
+        $actions = new Actions($settings, $this->shopUrl(), new Runner($this->db));
         $data = array_merge($data, $actions->state());
 
         $data['shop_url'] = $this->shopUrl();
         $data['action_connect'] = $this->url->link('extension/module/nitrosearch/connect', 'user_token=' . $token, true);
         $data['action_refresh'] = $this->url->link('extension/module/nitrosearch/refresh', 'user_token=' . $token, true);
         $data['action_disconnect'] = $this->url->link('extension/module/nitrosearch/disconnect', 'user_token=' . $token, true);
+        $data['action_sync'] = $this->url->link('extension/module/nitrosearch/sync', 'user_token=' . $token, true);
 
         // Shown so a merchant can confirm the endpoint answers from the OUTSIDE
         // before anything depends on it. A shop behind basic auth, a firewall or a
@@ -100,6 +103,14 @@ class ControllerExtensionModuleNitrosearch extends Controller
         });
     }
 
+    /** Queue the whole catalogue. The drain sends it. */
+    public function sync()
+    {
+        $this->respondJson(function (Actions $actions) {
+            return $actions->startFullSync();
+        });
+    }
+
     /** Forget this shop's credentials locally. The service keeps the index. */
     public function disconnect()
     {
@@ -129,7 +140,7 @@ class ControllerExtensionModuleNitrosearch extends Controller
         }
 
         $settings = new Settings($this->db);
-        $this->emit($run(new Actions($settings, $this->shopUrl())));
+        $this->emit($run(new Actions($settings, $this->shopUrl(), new Runner($this->db))));
     }
 
     /**
@@ -153,6 +164,11 @@ class ControllerExtensionModuleNitrosearch extends Controller
         $settings = new Settings($this->db);
         $settings->installId();
 
+        // The outbox must exist before any event can fire. Creating it here rather
+        // than lazily on first write means a shop that installs and immediately saves
+        // a product does not lose that first change to a missing table.
+        $this->db->query(Outbox::schema());
+
         // A per-install cron token, minted once. Never derived from the shop URL or
         // the install id — both are discoverable, and a guessable token makes the
         // drain endpoint an unauthenticated way to load someone's server.
@@ -172,6 +188,11 @@ class ControllerExtensionModuleNitrosearch extends Controller
     {
         $settings = new Settings($this->db);
         $settings->purge();
+
+        // The queue is ours alone and describes nothing the shop needs. Left behind it
+        // is an orphan table a merchant cannot identify or safely remove.
+        $outbox = new Outbox($this->db);
+        $outbox->drop();
     }
 
     /**

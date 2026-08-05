@@ -41,6 +41,7 @@
         <div id="ns-actions" class="form-group">
           {% if connected %}
             <button type="button" id="ns-refresh" class="btn btn-primary" data-url="{{ action_refresh }}">{{ text_refresh }}</button>
+            <button type="button" id="ns-sync" class="btn btn-default" data-url="{{ action_sync }}">{{ text_sync }}</button>
             <button type="button" id="ns-disconnect" class="btn btn-default" data-url="{{ action_disconnect }}">{{ text_disconnect }}</button>
           {% else %}
             <button type="button" id="ns-connect" class="btn btn-primary" data-url="{{ action_connect }}">{{ text_connect }}</button>

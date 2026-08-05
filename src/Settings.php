@@ -78,6 +78,13 @@ final class Settings
         'LAST_ERROR' => '',
         'DRAIN_TOKEN' => '',
         'DRAIN_RAN_AT' => 0,
+        // The full-walk cursor. Kept here rather than in its own table because it is
+        // a handful of scalars that must survive exactly as long as the install.
+        'FULLSYNC_ACTIVE' => false,
+        'FULLSYNC_CURSOR' => 0,
+        'FULLSYNC_TOTAL' => 0,
+        'FULLSYNC_STARTED' => '',
+        'FULLSYNC_DONE' => '',
     );
 
     /**
