@@ -1,10 +1,38 @@
-# NitroSearch for OpenCart
+<p align="center">
+  <img src="assets/mark.svg" width="72" height="72" alt="NitroSearch">
+</p>
 
-Fast, typo-tolerant search for your OpenCart shop. Results appear as your shoppers type.
+<h1 align="center">NitroSearch for OpenCart</h1>
 
-**Your shop's server is never in the search path.** Shopper queries go straight from the browser to
-the search engine with a scoped, read-only key — they never come back through PHP. Search stays
-fast even while your own server is busy, and this module is not on that path at all.
+<p align="center">
+  <strong>Amazon-quality search for OpenCart.</strong><br>
+  Instant, typo-tolerant product search served from the cloud — without adding load to your shop.
+</p>
+
+<p align="center">
+  <a href="https://nitrosearch.io/opencart">nitrosearch.io</a> &nbsp;·&nbsp;
+  <a href="https://nitrosearch.io/pricing">Pricing</a> &nbsp;·&nbsp;
+  <a href="https://nitrosearch.io/legal/privacy">Privacy</a> &nbsp;·&nbsp;
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/NitroSearch/nitrosearch-for-opencart/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/NitroSearch/nitrosearch-for-opencart?label=release&color=2563eb"></a>
+  <img alt="OpenCart 3.0.x and 4.x" src="https://img.shields.io/badge/OpenCart-3.0.x%20%C2%B7%204.x-blue">
+  <img alt="PHP 8.1+" src="https://img.shields.io/badge/PHP-8.1%2B-777bb4">
+  <a href="LICENSE"><img alt="GPL-3.0" src="https://img.shields.io/badge/licence-GPL--3.0-green"></a>
+</p>
+
+---
+
+<p align="center">
+  <img src="assets/screenshot-dropdown.webp" alt="NitroSearch instant search dropdown on an OpenCart storefront: typo-tolerant results with product images and prices, and stock, brand and category filters appearing as the shopper types" width="900">
+</p>
+
+NitroSearch is a hosted search service. This module syncs your OpenCart catalogue to it and lets it
+serve instant, typo-tolerant search and filtering to your shoppers — every query goes straight from
+the browser to our engine, so **your own server is never in the search path**. Search stays fast
+even while your shop is busy, and this module is not on that path at all.
 
 Works on **both current OpenCart majors** — see [Installing](#installing) for the archive to pick.
 
@@ -91,15 +119,20 @@ replaced with ours — same page, same URL, your theme's own heading and refine 
 Add-to-cart works from the results, including products with required options, which are sent to the
 product page to choose them exactly as your theme's own button does.
 
+<p align="center">
+  <img src="assets/screenshot-results.webp" alt="The NitroSearch results page on an OpenCart storefront: four matching products with images, prices and add-to-cart buttons, beside stock, brand and category filters" width="900">
+</p>
+
 Nothing is emitted until the shop is connected **and** verified: before that there is no search key,
 and a search box that cannot search is worse than none.
 
 ## Privacy
 
 The module sends your catalogue — the same product data your shoppers already see — and nothing
-else. It does not send customer records, addresses, payment details, or order contents. Order
-attribution, when enabled, reports an order's *value* against an opaque reference derived from your
-own install; the real order id never leaves your shop.
+else. It does not send customer records, addresses, payment details, or order contents.
+
+It also does not report orders. Search-to-order attribution exists on some of our other connectors
+and **is not built here**; if that changes, this section changes with it.
 
 ## Building from source
 
