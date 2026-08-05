@@ -71,7 +71,17 @@ Download the archive for your major from the [Releases](../../releases) page.
 ### OpenCart 3 — `nitrosearch-oc3-<version>.ocmod.zip`
 
 1. Admin → **Extensions → Installer** → **Upload**, choose the file.
-2. Admin → **Extensions → Extensions**, choose **Modules**, find **NitroSearch**, and install it.
+2. **Grant your user group permission.** Admin → **System → Users → User Groups**, edit your group
+   (usually *Administrator*), and tick `extension/module/nitrosearch` under **both** Access
+   Permission and Modify Permission. Save.
+3. Admin → **Extensions → Extensions**, choose **Modules**, find **NitroSearch**, and install it.
+
+**Step 2 is not optional, and skipping it is confusing rather than obvious.** OpenCart 3 keeps an
+explicit allowlist of admin routes per user group, and it is fixed at the moment the shop is
+installed — so a module added later is not on it. Until you grant the permission, installing or
+configuring NitroSearch answers **Permission Denied** even though the upload succeeded and every
+file is in place. This applies to every third-party OpenCart 3 module, not just this one, and there
+is nothing a module can do about it from inside. OpenCart 4 has no equivalent step.
 
 The filename does not matter on OpenCart 3.
 
