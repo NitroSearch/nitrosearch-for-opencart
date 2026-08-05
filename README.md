@@ -6,9 +6,7 @@ Fast, typo-tolerant search for your OpenCart shop. Results appear as your shoppe
 the search engine with a scoped, read-only key — they never come back through PHP. Search stays
 fast even while your own server is busy, and this module is not on that path at all.
 
-> **Status: pre-release.** Installing, connecting, syncing a catalogue and the storefront search
-> box all work end to end on both supported majors. There is no tagged release yet, so the
-> Releases page below is empty until there is; build from source in the meantime.
+Works on **both current OpenCart majors** — see [Installing](#installing) for the archive to pick.
 
 ## Supported versions
 
@@ -110,7 +108,8 @@ own install; the real order id never leaves your shop.
 ```
 
 Writes both archives to `dist/`. They are release assets rather than tracked files: any tagged
-commit reproduces them.
+commit reproduces them. Cutting a release: [RELEASING.md](RELEASING.md). What changed between
+versions: [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 
