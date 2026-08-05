@@ -58,10 +58,23 @@ ok()  { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
 
 # The shared tree, listed once. Copied into both archives at the path each major's
 # installer can actually reach.
+#
+# THE VENDORED CONTRACT KIT IS FOLDED IN HERE, at `AdapterKit/`. It lives in the
+# repository under `vendor/nitrosearch-contract/` so its provenance is obvious — it is
+# generated elsewhere and copied in verbatim, never edited here — but it declares
+# `NitroSearch\AdapterKit`, and `src/autoload.php` maps the whole `NitroSearch\` prefix
+# to one directory. Placing it inside that directory at build time means the autoloader
+# needs no second rule, and a merchant's install has no `vendor/` path to reason about.
+#
+# Vendored, never Composer-required: OpenCart merchants upload an archive through a
+# back office, and a module that resolves dependencies at install time fails on the
+# hosts least able to fix it.
 copy_shared() {
     local dest="$1"
     mkdir -p "$dest"
     cp -R src/. "$dest/"
+    mkdir -p "$dest/AdapterKit"
+    cp -R vendor/nitrosearch-contract/src/. "$dest/AdapterKit/"
 }
 
 build_oc3() {
