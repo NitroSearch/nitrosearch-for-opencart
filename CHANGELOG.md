@@ -6,6 +6,8 @@ All notable changes to this module are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-08-06
+
 ### Added
 
 - **You can now turn off search usage sharing.** The storefront search panel reports anonymous
@@ -108,6 +110,7 @@ months *after* 4.1.0.3, so neither line is a legacy one and neither is treated a
   your indexed catalogue is kept on the service, so reconnecting restores search without a re-sync.
   Uninstalling only the **archive** leaves settings alone.
 
-[Unreleased]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/NitroSearch/nitrosearch-for-opencart/releases/tag/v1.0.0
