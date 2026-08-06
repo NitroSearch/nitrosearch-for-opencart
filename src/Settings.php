@@ -70,6 +70,15 @@ final class Settings
         'WIDGET_BUNDLE_URL' => '',
         'EVENTS_URL' => '',
         'EVENTS_TOKEN' => '',
+        // The merchant's opt-out for the anonymous usage beacon. DEFAULTS TO TRUE,
+        // matching the other connectors, so an existing shop is not silently
+        // switched off by an update — but it must be switchable, and until this key
+        // existed it was not. The module sent no `analytics` key at all, the widget
+        // opts out only on an explicit `cfg.analytics === false`, and the service
+        // issues the events token to every verified store, so there was no layer at
+        // which an OpenCart merchant could decline. The other two connectors had
+        // this from their first release.
+        'SHARE_SEARCH_DATA' => true,
         'PRODUCT_LIMIT' => 0,
         'PRODUCT_COUNT' => 0,
         'AT_LIMIT' => false,

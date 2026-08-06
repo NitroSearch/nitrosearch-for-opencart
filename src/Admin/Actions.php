@@ -206,6 +206,25 @@ final class Actions
     }
 
     /**
+     * Turn the anonymous usage beacon on or off.
+     *
+     * A DELIBERATE TOGGLE RATHER THAN A FORM FIELD, because this screen has no form
+     * — every other control on it is an action that answers JSON and reloads. The
+     * value is read from the request by the adapter and arrives here already cast,
+     * so `src/` stays free of OpenCart's request object.
+     *
+     * @param bool $on
+     *
+     * @return array{ok: bool, share_search_data: bool}
+     */
+    public function setShareSearchData($on)
+    {
+        $this->settings->update(array('SHARE_SEARCH_DATA' => (bool) $on));
+
+        return array('ok' => true, 'share_search_data' => (bool) $on);
+    }
+
+    /**
      * The two urls the Configure screen shows a merchant.
      *
      * BUILT HERE RATHER THAN IN EACH ADAPTER, and that is [D-041]'s rule being
@@ -248,6 +267,10 @@ final class Actions
             'last_sync' => (string) $this->settings->get('LAST_SYNC'),
             'full_sync_active' => (bool) $this->settings->get('FULLSYNC_ACTIVE'),
             'pending' => $this->runner->outbox()->pendingCount(),
+            // Rendered as the toggle's checked state. A control whose position is
+            // not read back from what was stored is a control that can lie about
+            // the setting it claims to show.
+            'share_search_data' => (bool) $this->settings->get('SHARE_SEARCH_DATA'),
         );
     }
 }

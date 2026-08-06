@@ -45,7 +45,7 @@ class ControllerExtensionModuleNitrosearch extends Controller
         $data = array();
         foreach (array('heading_title', 'text_extension', 'text_edit', 'text_connected', 'text_not_connected',
                        'text_shop_url', 'text_verify_url', 'text_verify_help', 'text_cron_url',
-                       'text_cron_help', 'text_home') as $key) {
+                       'text_cron_help', 'text_home', 'text_share_data', 'text_share_data_help') as $key) {
             $data[$key] = $this->language->get($key);
         }
 
@@ -57,6 +57,7 @@ class ControllerExtensionModuleNitrosearch extends Controller
         $data['action_refresh'] = $this->url->link('extension/module/nitrosearch/refresh', 'user_token=' . $token, true);
         $data['action_disconnect'] = $this->url->link('extension/module/nitrosearch/disconnect', 'user_token=' . $token, true);
         $data['action_sync'] = $this->url->link('extension/module/nitrosearch/sync', 'user_token=' . $token, true);
+        $data['action_share_data'] = $this->url->link('extension/module/nitrosearch/shareData', 'user_token=' . $token, true);
 
         $data['breadcrumbs'] = array(
             array(
@@ -95,6 +96,23 @@ class ControllerExtensionModuleNitrosearch extends Controller
     {
         $this->respondJson(function (Actions $actions) {
             return $actions->refresh();
+        });
+    }
+
+    /**
+     * Turn the anonymous usage beacon on or off.
+     *
+     * READS THE VALUE HERE so `src/` never touches OpenCart's request object. The
+     * cast is deliberate and one-directional: anything that is not the string '1'
+     * is off, so a malformed or missing parameter turns sharing OFF rather than on.
+     * A privacy control that fails open is not a control.
+     */
+    public function shareData()
+    {
+        $on = isset($this->request->post['share']) && $this->request->post['share'] === '1';
+
+        $this->respondJson(function (Actions $actions) use ($on) {
+            return $actions->setShareSearchData($on);
         });
     }
 

@@ -108,6 +108,17 @@ final class Widget
             // it yet — so the honest default is not to place one. The widget shows
             // the badge unless told otherwise, so this key cannot be omitted.
             'badge' => false,
+            // The merchant's opt-out for the anonymous usage beacon, and THIS KEY
+            // CANNOT BE OMITTED EITHER. The widget declines to emit only on an
+            // explicit `cfg.analytics === false`; an absent key is `undefined`,
+            // which is not `false`, so leaving it out means always-on with no way
+            // to decline. That is what this module shipped until now — the setting
+            // did not exist, the key was never sent, and the service issues the
+            // events token to every verified store, so there was no layer at which
+            // a merchant could say no. Sent even when true, so the value on the
+            // page is always the merchant's actual choice rather than a default
+            // inferred from silence.
+            'analytics' => (bool) $this->settings->get('SHARE_SEARCH_DATA'),
         );
 
         // THE LOCALE IS NOT ONLY A TRANSLATION SWITCH — the widget formats prices

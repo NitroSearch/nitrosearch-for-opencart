@@ -48,7 +48,7 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         $data = array();
         foreach (array('heading_title', 'text_extension', 'text_edit', 'text_connected', 'text_not_connected',
                        'text_shop_url', 'text_verify_url', 'text_verify_help', 'text_cron_url',
-                       'text_cron_help', 'text_home') as $key) {
+                       'text_cron_help', 'text_home', 'text_share_data', 'text_share_data_help') as $key) {
             $data[$key] = $this->language->get($key);
         }
 
@@ -60,6 +60,7 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         $data['action_refresh'] = $this->url->link('extension/nitrosearch/module/nitrosearch.refresh', 'user_token=' . $token);
         $data['action_disconnect'] = $this->url->link('extension/nitrosearch/module/nitrosearch.disconnect', 'user_token=' . $token);
         $data['action_sync'] = $this->url->link('extension/nitrosearch/module/nitrosearch.sync', 'user_token=' . $token);
+        $data['action_share_data'] = $this->url->link('extension/nitrosearch/module/nitrosearch.shareData', 'user_token=' . $token);
 
         $data['breadcrumbs'] = [
             [
@@ -95,6 +96,21 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
     public function refresh(): void
     {
         $this->respondJson(fn (Actions $actions) => $actions->refresh());
+    }
+
+    /**
+     * Turn the anonymous usage beacon on or off.
+     *
+     * READS THE VALUE HERE so `src/` never touches OpenCart's request object. The
+     * cast is deliberate and one-directional: anything that is not the string '1'
+     * is off, so a malformed or missing parameter turns sharing OFF rather than on.
+     * A privacy control that fails open is not a control.
+     */
+    public function shareData(): void
+    {
+        $on = isset($this->request->post['share']) && $this->request->post['share'] === '1';
+
+        $this->respondJson(fn (Actions $actions) => $actions->setShareSearchData($on));
     }
 
     /**

@@ -141,6 +141,17 @@ and a search box that cannot search is worse than none.
 The module sends your catalogue — the same product data your shoppers already see — and nothing
 else. It does not send customer records, addresses, payment details, or order contents.
 
+**Search usage, and how to turn it off.** The storefront search panel also reports anonymous usage —
+what was searched for, what was clicked, and whether a search found nothing — so your NitroSearch
+dashboard can show which searches work and which end in a dead end. It is not tied to a person: no
+names, no email addresses, no accounts, no cookies. **Configure → Share anonymous search usage**
+turns it off, and your storefront search keeps working exactly as before; the dashboard simply stops
+filling in.
+
+That switch is new. Releases 1.0.0 and 1.1.0 sent the usage signal with no way to decline it — the
+setting did not exist. If you are upgrading, the switch starts **on**, matching what your shop was
+already doing, so nothing changes until you change it.
+
 It also does not report orders. Search-to-order attribution exists on some of our other connectors
 and **is not built here**; if that changes, this section changes with it.
 

@@ -59,9 +59,15 @@ die() { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 # ── Guards, before anything is packaged ──────────────────────────────────────
 #
-# Both run their own self-test first. A guard that has quietly stopped
+# Each runs its own self-test first. A guard that has quietly stopped
 # discriminating is worse than no guard, because it reads as coverage — so the
-# build refuses to trust either one until it has watched it fail on purpose.
+# build refuses to trust any of them until it has watched them fail on purpose.
+#
+# THE LIST IS DERIVED, NOT WRITTEN DOWN. It used to name two guards, and a third
+# added beside them would have sat in bin/ running on nobody's machine while the
+# build reported "Guards" and passed. Every bin/check-*.sh is a release gate by
+# construction now, so adding one is one file rather than one file and a line
+# here that is easy to forget.
 say "Guards"
 
 # ⚠ STALE ARCHIVES ARE REMOVED BEFORE ANYTHING CAN FAIL. `dist/` is created above,
@@ -87,12 +93,33 @@ else
     die "php is not on PATH — refusing to build unlinted (this module shipped a parse error once precisely here)"
 fi
 
-for guard in check-script-escaping check-heartbeat; do
-    ./bin/"$guard".sh --self-test >/dev/null \
-        || die "${guard}.sh failed its own self-test — fix the guard before trusting this build"
-    ./bin/"$guard".sh \
-        || die "${guard}.sh refused this tree (see above)"
+_guards_run=0
+for guard in ./bin/check-*.sh; do
+    [ -f "$guard" ] || continue
+    _guards_run=$((_guards_run + 1))
+    "$guard" --self-test >/dev/null \
+        || die "$(basename "$guard") failed its own self-test — fix the guard before trusting this build"
+    "$guard" \
+        || die "$(basename "$guard") refused this tree (see above)"
 done
+
+# A loop over nothing passes, and "Guards" would print above it. If the glob ever
+# stops matching, the build must stop rather than quietly package an ungated tree.
+[ "$_guards_run" -ge 3 ] \
+    || die "only ${_guards_run} guard(s) ran — bin/check-*.sh matched less than expected, so this build is not gated"
+
+# ── The test suite, before anything is packaged ──────────────────────────────
+#
+# The bash guards above cover the adapters — that each major wires what it must.
+# This covers `src/`, which is copied verbatim into both archives: a module that
+# cannot reproduce the shared HMAC vector cannot talk to the service at all, and
+# finding that out at package time beats finding it out as a 401 on a merchant's
+# shop. `php` is already required above, so there is no fallback to skip it.
+#
+# Relative, because this script cd's to the repo root at the top and there is no
+# $ROOT here — `set -u` caught that immediately, which is the whole reason it is
+# set.
+php tests/run.php || die "the test suite refused this tree (see above)"
 
 # The shared tree, listed once. Copied into both archives at the path each major's
 # installer can actually reach.

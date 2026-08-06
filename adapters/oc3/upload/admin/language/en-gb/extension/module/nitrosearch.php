@@ -23,6 +23,10 @@ $_['text_verify_help']    = 'NitroSearch fetches this address from the outside t
 $_['text_cron_url']       = 'Scheduled sync address';
 $_['text_cron_help']      = 'Point your hosting control panel\'s cron at this address every few minutes so catalogue changes reach NitroSearch promptly. It is safe to call as often as you like — it does a fixed amount of work and stops. Without a cron the shop still syncs, but only when someone visits it, and more slowly. Keep the address private: anyone who has it can make your shop sync.';
 
+// Privacy
+$_['text_share_data']     = 'Share anonymous search usage';
+$_['text_share_data_help'] = 'On by default. Sends what shoppers searched for, what they clicked, and whether a search found nothing — so your NitroSearch dashboard can show which searches work and which end in a dead end. It is not tied to a person: no names, no email addresses, no accounts, no cookies, and no order contents. Turn it off and your storefront search keeps working exactly as it does now; the dashboard simply stops filling in.';
+
 // Error
 $_['error_permission']    = 'Warning: You do not have permission to modify NitroSearch.';
 
