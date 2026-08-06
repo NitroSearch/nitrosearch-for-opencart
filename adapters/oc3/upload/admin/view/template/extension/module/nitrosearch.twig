@@ -69,6 +69,22 @@
             <code>{{ cron_url }}</code>
             <p class="help-block">{{ text_cron_help }}</p>
           </dd>
+
+          {# CHECKED FROM WHAT WAS STORED, never from a default written here. A
+             privacy control whose position is not read back from the setting can
+             show "on" while the value says otherwise, which is worse than having
+             no control at all. #}
+          <dt>{{ text_share_data }}</dt>
+          <dd>
+            <div class="checkbox">
+              <label>
+                <input type="checkbox" id="ns-share-data"
+                       data-url="{{ action_share_data }}"{% if share_search_data %} checked{% endif %}>
+                {{ text_share_data }}
+              </label>
+            </div>
+            <p class="help-block">{{ text_share_data_help }}</p>
+          </dd>
         </dl>
 
       </div>
@@ -82,6 +98,29 @@
 // screen's state comes from the server, and re-rendering it is both simpler and
 // impossible to get out of step with what was actually stored.
 $(function () {
+  // The privacy toggle posts its NEW position and does NOT reload — reloading a
+  // page the merchant is reading to decide something is hostile, and the only
+  // thing that changed is this one control. On failure the checkbox is put back
+  // where it was, so its position never claims a setting that was not stored.
+  $('#ns-share-data').on('change', function () {
+    var $c = $(this), on = $c.is(':checked');
+    $c.prop('disabled', true);
+    $('#ns-result').text('…');
+    $.ajax({
+      url: $c.data('url'), type: 'POST', dataType: 'json', data: { share: on ? '1' : '0' },
+      success: function (json) {
+        if (json && json.ok) { $('#ns-result').text('Saved.'); }
+        else { $c.prop('checked', !on); $('#ns-result').text((json && json.error) ? json.error : 'Failed.'); }
+        $c.prop('disabled', false);
+      },
+      error: function (xhr) {
+        $c.prop('checked', !on);
+        $('#ns-result').text('HTTP ' + xhr.status);
+        $c.prop('disabled', false);
+      }
+    });
+  });
+
   $('#ns-actions').on('click', 'button[data-url]', function () {
     var $b = $(this);
     $b.prop('disabled', true);

@@ -40,10 +40,28 @@ classes do not autoload until the extension is registered in the database, which
 
 ## Testing
 
-**Install the built archive into a shop that has never seen the module.** Not a copied file, not a
-symlink, not a bind mount. Packaging is where this repository can fail silently, and none of those
-can show you a packaging bug — a file you placed yourself proves only that the code runs, which was
-never the part in doubt.
+```bash
+php tests/run.php        # the suite — no Composer, no PHPUnit, no network, no shop
+./bin/build-module.sh    # lints, runs every bin/check-*.sh guard, runs the suite, packages both
+```
+
+The suite covers `src/`, which is copied verbatim into both archives — so one run covers both
+majors. It covers the pure parts where being wrong is silent and expensive: the HMAC
+canonicalisation (a drift there is a 401, not a negotiation), the proof-of-control hash, and the
+vendored currency exponent table that decides whether a price is 1999 or 19.99.
+
+It deliberately uses no Composer and no PHPUnit. This module ships as an archive with no build step
+and no dependencies, and a dev-only dependency would mean a lockfile and a packaging rule to keep it
+out.
+
+**It cannot boot OpenCart.** The adapters, the catalogue walk and the drain are not covered by it.
+The guards in `bin/` cover the adapters instead, by checking that each major wires what it must —
+run any of them with `--self-test` to watch it fail on purpose before you trust it.
+
+**And for everything else: install the built archive into a shop that has never seen the module.**
+Not a copied file, not a symlink, not a bind mount. Packaging is where this repository can fail
+silently, and none of those can show you a packaging bug — a file you placed yourself proves only
+that the code runs, which was never the part in doubt.
 
 Two live examples of what that catches:
 

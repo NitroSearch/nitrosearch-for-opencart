@@ -6,6 +6,33 @@ All notable changes to this module are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **You can now turn off search usage sharing.** The storefront search panel reports anonymous
+  usage — what shoppers searched for, what they clicked, and whether a search found nothing — so
+  your dashboard can show which searches work and which end in a dead end. **Configure → Share
+  anonymous search usage** switches it off, on both OpenCart 3 and OpenCart 4.
+
+  **Until now there was no way to decline.** The setting did not exist, so the module never told
+  the search panel either way, and the panel treats "not told" as yes. Both of our other connectors
+  have had this switch since their first release; this one shipped 1.0.0 and 1.1.0 without it.
+
+  **Upgrading changes nothing on its own.** The switch starts on, matching what your shop was
+  already doing, and turning it off leaves storefront search working exactly as before — only the
+  dashboard stops filling in.
+
+### Changed
+
+- **The module now has a test suite and continuous integration.** It had neither, which is how both
+  the missing switch above and the missing heartbeat in 1.1.0 reached merchants: both were absences,
+  and an absence has no broken behaviour to notice while using the module.
+
+  `php tests/run.php` covers the shared code both OpenCart 3 and OpenCart 4 builds carry — the
+  request signing, the proof-of-control hash, and the currency table that decides whether a price is
+  1999 or 19.99. `./bin/build-module.sh` runs it before packaging, along with every guard in `bin/`,
+  and CI runs the lot on PHP 8.1, 8.2 and 8.3. Nothing a merchant installs changes — no test
+  material is in either archive.
+
 ## [1.1.0] — 2026-08-05
 
 ### Added
