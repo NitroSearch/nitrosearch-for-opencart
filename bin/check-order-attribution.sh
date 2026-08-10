@@ -334,10 +334,19 @@ check_attribution() {
   #
   #    The send method is found by what it does (it calls `reportOrder`) rather than
   #    by name, so renaming it does not quietly disable this check.
+  #    ⚠ THE awk MUST NOT `exit`. It is the CONSUMER of a pipe, so leaving early
+  #    closes it, `strip_comments` takes SIGPIPE and exits 141, and `pipefail` makes
+  #    this command substitution fail — fatal under `set -e` inside an assignment,
+  #    which means the script dies HERE, silently, with no FAIL line and no clue.
+  #    That is exactly how it presented: CI showed only the build's own "refused this
+  #    tree", and the PHP version it struck rotated between runs because it is a race
+  #    against the pipe buffer. A `found` flag reads to EOF and prints the same first
+  #    match. Same family as `grep -q` and `head`, both of which cost this repo a red
+  #    CI on the same day; none of the three may consume a pipe here.
   local send_method
   send_method="$(strip_comments "$root/$REPORTS" \
     | awk '/function[ \t]+[A-Za-z_]+[ \t]*\(/ { match($0, /function[ \t]+[A-Za-z_]+/); m = substr($0, RSTART, RLENGTH); sub(/function[ \t]+/, "", m) }
-           /reportOrder[ \t]*\(/ { print m; exit }')"
+           /reportOrder[ \t]*\(/ && !found { print m; found = 1 }')"
 
   if [ -z "$send_method" ]; then
     fail "$REPORTS never calls reportOrder() — nothing in this module sends an order report"
