@@ -104,7 +104,33 @@ strip_comments() {
   sed -e 's://.*::' -e 's:#.*::' -e 's:^[[:space:]]*\*.*::' -e 's:^[[:space:]]*/\*.*::' "$1" 2>/dev/null
 }
 
+# ── Why nothing here pipes into `grep -q` ────────────────────────────────────
+#
+# `PRODUCER | grep -q PATTERN` is unsafe in any script that sets `pipefail`, and
+# this one does. `grep -q` exits the instant it matches — that is the whole point
+# of the flag — which closes the pipe while the producer is still writing. The
+# producer is then killed by SIGPIPE and exits 141, and `pipefail` reports the
+# LAST non-zero status as the pipeline's. So the pipeline returns 141 **because
+# the pattern matched**, and `if ! ...` turns that into a failure.
+#
+# It is a race against the pipe buffer, which is what made it expensive:
+#
+#   $ strip_comments src/Sync/OrderAttribution.php | grep -qE '...'
+#   PIPESTATUS=(141 0)   # sed killed, grep matched → pipeline "fails"
+#   PIPESTATUS=(0 0)     # same command, same tree, one run later → passes
+#
+# A small producer usually wins the race, so this passed for months on the short
+# `printf` blocks and on macOS, then failed on Linux CI against a 656-line file.
+# **It took OpenCart `1.3.0` and Magento `1.0.1` out to merchants on red CI**, and
+# the message it printed accused correct code of a defect it did not have.
+#
+# `qgrep` reads its input to the end. That costs nothing on files this size and
+# it cannot race. Use it anywhere a producer pipes into a boolean grep; pass the
+# same flags you would have passed `grep` (`-E`, `-F`, `-v`), just not `-q`.
+qgrep() { grep -c "$@" >/dev/null; }
+
 # Live (non-commented) occurrences of a fixed string in one file.
+# `grep -c` already reads to the end, so this was never exposed to the above.
 live_hits() {
   strip_comments "$2" | grep -cF "$1" || true
 }
@@ -187,7 +213,7 @@ handler_file() {
   local major="$1" name="$2" f
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    if strip_comments "$f" | grep -qE "function[[:space:]]+${name}[[:space:]]*\("; then
+    if strip_comments "$f" | qgrep -E "function[[:space:]]+${name}[[:space:]]*\("; then
       printf '%s\n' "$f"
       return
     fi
@@ -247,7 +273,7 @@ check_attribution() {
     fail "$REPORTS does not use CREATE TABLE IF NOT EXISTS — an upgrading shop cannot get the table"
   elif ! grep -qE 'function[[:space:]]+ensureSchema[[:space:]]*\(' "$root/$REPORTS" 2>/dev/null; then
     fail "$REPORTS creates its table only from install() — OpenCart never re-runs install() on an UPGRADE, so every existing shop would write to a table that does not exist and lose the attribution silently"
-  elif ! awk '/function[[:space:]]+queuePending[[:space:]]*\(/,/^    }/' "$root/$REPORTS" 2>/dev/null | grep -q 'ensureSchema'; then
+  elif ! awk '/function[[:space:]]+queuePending[[:space:]]*\(/,/^    }/' "$root/$REPORTS" 2>/dev/null | qgrep 'ensureSchema'; then
     fail "$REPORTS has ensureSchema() but the queue writer never calls it — an upgrading shop still gets no table"
   fi
 
@@ -278,7 +304,7 @@ check_attribution() {
   #    guard greps the literal `orderId <= 0`, so renaming a variable on a correct
   #    tree fails it. This accepts any order-ish variable compared against zero.
   if ! strip_comments "$root/$ATTRIBUTION" \
-      | grep -qE '\$[A-Za-z_]*[Oo]rder[A-Za-z_]*[[:space:]]*(<=[[:space:]]*0|<[[:space:]]*1)'; then
+      | qgrep -E '\$[A-Za-z_]*[Oo]rder[A-Za-z_]*[[:space:]]*(<=[[:space:]]*0|<[[:space:]]*1)'; then
     fail "$ATTRIBUTION never refuses an order with no id — every report would carry the same order_ref and the service would fold them into one"
   fi
 
@@ -293,7 +319,7 @@ check_attribution() {
   #     presence of the exponent-aware kit this module already vendors and already
   #     uses for prices. A wrong sum built out of the right kit still passes here and
   #     only a real order in a zero-decimal currency can catch it.
-  if strip_comments "$root/$ATTRIBUTION" | grep -qE '(\*[[:space:]]*100([^0-9]|$)|(^|[^0-9])100[[:space:]]*\*)'; then
+  if strip_comments "$root/$ATTRIBUTION" | qgrep -E '(\*[[:space:]]*100([^0-9]|$)|(^|[^0-9])100[[:space:]]*\*)'; then
     fail "$ATTRIBUTION multiplies by 100 — that is right for dollars and wrong for JPY and KWD; the vendored exponent table exists for this"
   fi
 
@@ -318,11 +344,11 @@ check_attribution() {
   else
     block="$(method_block "$root/$REPORTS" "$send_method")"
 
-    if printf '%s\n' "$block" | grep -qE '\b(gmdate|date)[[:space:]]*\('; then
+    if printf '%s\n' "$block" | qgrep -E '\b(gmdate|date)[[:space:]]*\('; then
       fail "$REPORTS::${send_method}() recomputes a timestamp — occurred_at must be read from the row, or every retry double-counts the merchant's revenue"
     fi
 
-    if ! printf '%s\n' "$block" | grep -qF "occurred_at"; then
+    if ! printf '%s\n' "$block" | qgrep -F "occurred_at"; then
       fail "$REPORTS::${send_method}() never reads occurred_at from the row"
     fi
   fi
@@ -347,7 +373,7 @@ check_attribution() {
       while IFS= read -r name; do
         [ -n "$name" ] || continue
         trigger_sources=$((trigger_sources + 1))
-        if ! printf '%s\n' "$codes_block" | grep -qF "$name"; then
+        if ! printf '%s\n' "$codes_block" | qgrep -F "$name"; then
           fail "$EVENTS::codes() never consults ${name}() — those event rows would outlive the module and call a missing controller on every order"
         fi
       done < <(strip_comments "$root/$EVENTS" \
@@ -446,17 +472,17 @@ check_attribution() {
       # (d) THE URL SURFACE CLOSED. The event dispatcher always passes the route by
       #     reference; a URL invocation passes nothing. One line removes the public
       #     surface on both majors.
-      if ! printf '%s\n' "$block" | grep -qE '\$route[[:space:]]*===[[:space:]]*null'; then
+      if ! printf '%s\n' "$block" | qgrep -E '\$route[[:space:]]*===[[:space:]]*null'; then
         fail "adapters/${name}: ${handler}() has no '\$route === null' bail — it is a public storefront URL anyone can request"
       fi
 
       # (e) EXCEPTION-SEALED. Both catches, because this runs on a checkout and a
       #     `\Throwable` that is not an `\Exception` — a TypeError, an
       #     ArgumentCountError — is exactly what an unfamiliar shop produces.
-      if ! printf '%s\n' "$block" | grep -qF 'try {'; then
+      if ! printf '%s\n' "$block" | qgrep -F 'try {'; then
         fail "adapters/${name}: ${handler}() has no try — an exception here breaks a merchant's checkout"
       fi
-      if ! printf '%s\n' "$block" | grep -qF 'catch (\Throwable'; then
+      if ! printf '%s\n' "$block" | qgrep -F 'catch (\Throwable'; then
         fail "adapters/${name}: ${handler}() does not catch \\Throwable — catching only \\Exception leaves a TypeError to break a merchant's checkout"
       fi
 
@@ -465,7 +491,7 @@ check_attribution() {
       #     substitutes it for the output. A handler that returned even `true` would
       #     silently disable every other extension registered on the same trigger —
       #     and `checkout/cart/add` is a trigger other extensions use.
-      if printf '%s\n' "$block" | grep -qE 'return[[:space:]]+[^;[:space:]]'; then
+      if printf '%s\n' "$block" | qgrep -E 'return[[:space:]]+[^;[:space:]]'; then
         fail "adapters/${name}: ${handler}() returns a value — on OpenCart 3 that truncates the trigger and disables every other extension on it"
       fi
 
@@ -473,7 +499,7 @@ check_attribution() {
       #     queueing to a local table and nothing more. A flush called from a handler
       #     puts an outbound HTTP call inside the shopper's request, where the
       #     failure is a slow checkout rather than an exception anyone catches.
-      if printf '%s\n' "$block" | grep -qE "(orderReports\(\)|flush\(|reportOrder\(|new Client)"; then
+      if printf '%s\n' "$block" | qgrep -E "(orderReports\(\)|flush\(|reportOrder\(|new Client)"; then
         fail "adapters/${name}: ${handler}() reaches the sender — the checkout path queues and nothing else"
       fi
     done < <(printf '%s\n' "$required")
