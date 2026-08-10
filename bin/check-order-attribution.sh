@@ -109,6 +109,31 @@ live_hits() {
   strip_comments "$2" | grep -cF "$1" || true
 }
 
+# Live occurrences of an IDENTIFIER — the name on its own, not as a fragment of a
+# longer one.
+#
+# ⚠ WHY THIS IS NOT `live_hits`, found 2026-08-10 while proving the registration
+# check on the real tree rather than on the self-test's fixtures. A substring match
+# accepts any name that CONTAINS the handler's, and the dangerous direction is the
+# one that reads as a typo: registering the action
+#
+#     extension/nitrosearch/module/nitrosearch.onCartAddd
+#
+# against a controller that defines `onCartAdd` satisfied `grep -F onCartAdd`, so
+# the guard went green on a tree whose add-to-cart event points at a method that
+# does not exist. That is worse than the omission this check was written for — an
+# unregistered handler does nothing, while a row pointing at a missing method is
+# resolved on EVERY add-to-cart in the shop, which is to say on the checkout path.
+# The deleted-line case was caught; only the typo slipped, and a typo is the likelier
+# of the two to be written.
+#
+# Bounded on BOTH sides: `onCartAddd` must not satisfy `onCartAdd`, and neither must
+# `myOnCartAdd`. The separators either side in real registrations are `.` `/` `'`,
+# none of which is an identifier character.
+live_word_hits() {
+  strip_comments "$2" | grep -cE "(^|[^A-Za-z0-9_])$1([^A-Za-z0-9_]|$)" || true
+}
+
 # One method's source, signature line first, from `function <name>(` to the brace
 # that closes it.
 #
@@ -373,17 +398,20 @@ check_attribution() {
         continue
       fi
 
-      # (b) REGISTERED. A handler nothing points at is the sibling connector's
-      #     incident exactly: present, correct, reviewed, and never called.
+      # (b) REGISTERED, AND REGISTERED UNDER ITS OWN NAME. A handler nothing points
+      #     at is the sibling connector's incident exactly: present, correct,
+      #     reviewed, and never called. A handler pointed at by a NEAR-MISS of its
+      #     own name is worse — see live_word_hits() — because the row still
+      #     registers and is then resolved on every add-to-cart in the shop.
       if [ "$(
             hits=0
             while IFS= read -r f; do
               [ -n "$f" ] || continue
-              hits=$((hits + $(live_hits "$handler" "$f")))
+              hits=$((hits + $(live_word_hits "$handler" "$f")))
             done < <(admin_files "$major")
             printf '%s' "$hits"
           )" -eq 0 ]; then
-        fail "adapters/${name}: ${handler}() is defined but never registered by the admin controller — the handler exists and nothing will ever call it"
+        fail "adapters/${name}: ${handler}() is defined but never registered by the admin controller under that exact name — either nothing will call it, or an event row points at a method that does not exist and is resolved on every checkout"
       fi
 
       block="$(method_block "$file" "$handler")"
@@ -646,6 +674,24 @@ PHP
   grep -v 'onOrderCreated' "$tmp/good/adapters/oc4/admin/controller/module/nitrosearch.php" \
     > "$tmp/bad/adapters/oc4/admin/controller/module/nitrosearch.php"
   try_evasion "a handler defined but never registered" "never registered"
+
+  # THE NEAR-MISS, which is the same failure with a worse ending and the one the
+  # substring match used to let through. The row registers, so nothing complains at
+  # install time; the action names a method that does not exist, and it is resolved
+  # on every add-to-cart in the shop.
+  spoil
+  sed "s/nitrosearch\.onCartAdd'/nitrosearch.onCartAddd'/" \
+    "$tmp/good/adapters/oc4/admin/controller/module/nitrosearch.php" \
+    > "$tmp/bad/adapters/oc4/admin/controller/module/nitrosearch.php"
+  try_evasion "an action typo'd to a method that does not exist" "never registered"
+
+  # And the other side of the boundary: a DIFFERENT handler whose name merely ends
+  # with this one's must not satisfy it either.
+  spoil
+  sed "s/nitrosearch\.onCartAdd'/nitrosearch.reallyOnCartAdd'/" \
+    "$tmp/good/adapters/oc4/admin/controller/module/nitrosearch.php" \
+    > "$tmp/bad/adapters/oc4/admin/controller/module/nitrosearch.php"
+  try_evasion "an action registered under a longer name that contains this one" "never registered"
 
   # THE DERIVATION ITSELF. A fourth handler on ONE major must make every other major
   # fail — this is what covers a third major nobody has written yet.
