@@ -15,6 +15,7 @@ require_once DIR_EXTENSION . 'nitrosearch/system/library/nitrosearch/autoload.ph
 use NitroSearch\Admin\Actions;
 use NitroSearch\Settings;
 use NitroSearch\Sync\Events;
+use NitroSearch\Sync\OrderReports;
 use NitroSearch\Sync\Outbox;
 use NitroSearch\Sync\Runner;
 use NitroSearch\Support\ShopUrl;
@@ -197,6 +198,13 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         // a product does not lose that first change to a missing table.
         $this->db->query(Outbox::schema());
 
+        // The order-report queue, for the same reason and with more of it: this table
+        // is written from inside a shopper's checkout, so a shop that took an order
+        // before the table existed would lose the attribution and record the failure
+        // in the merchant's error slot rather than anywhere useful. It is InnoDB —
+        // see the class — because a checkout must take a row lock and not a table one.
+        $this->db->query(OrderReports::schema());
+
         // OpenCart 4 puts a DOT before the method in both the trigger and the action,
         // matching its own router; OpenCart 3 uses slashes throughout. The rows
         // differ; the handler they point at does not.
@@ -226,6 +234,52 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
             'sort_order' => 0,
         ]);
 
+        // ── Order attribution ────────────────────────────────────────────────────
+        //
+        // FOUR ROWS ON THIS MAJOR AND THREE ON OPENCART 3, and the difference is not a
+        // spelling one. `Events::orderTriggers()` keys each method by major precisely
+        // so this loop cannot build a trigger for a hook the running major does not
+        // have; `editOrder` is this major's alone, because OpenCart 3's confirm
+        // controller re-runs `addOrder` instead of editing.
+        //
+        // ⚠ THE ACTIONS ARE WRITTEN OUT IN FULL AND NOT ASSEMBLED FROM THE CODE, which
+        // is a decision about legibility rather than a limitation. A handler name that
+        // only exists as a fragment concatenated at runtime is invisible to a grep for
+        // "is this handler registered anywhere" — which is the exact check that stands
+        // between this module and the sibling connector's incident, where a handler was
+        // written, was correct, was reviewed, and was pointed at by nothing. The one
+        // string that has to match a method on the storefront controller is spelled
+        // here the way it is spelled there.
+        //
+        // A code with no entry in this map is SKIPPED rather than registered against a
+        // half-built action, so a fifth trigger added to `Events` without a line here
+        // is a hook that quietly does nothing until someone places a test order — bad,
+        // but survivable, where a row pointing at a missing controller would fire on
+        // every checkout in the shop. `Events::codes()` still removes it at uninstall.
+        $actions = [
+            'nitrosearch_cart_add' => 'extension/nitrosearch/module/nitrosearch.onCartAdd',
+            'nitrosearch_order_created' => 'extension/nitrosearch/module/nitrosearch.onOrderCreated',
+            'nitrosearch_order_edited' => 'extension/nitrosearch/module/nitrosearch.onOrderCreated',
+            'nitrosearch_order_confirmed' => 'extension/nitrosearch/module/nitrosearch.onOrderConfirmed',
+        ];
+
+        $attribution = array_merge([Events::cartTrigger()], Events::orderTriggers());
+
+        foreach ($attribution as $trigger) {
+            if (!isset($trigger['methods']['oc4']) || !isset($actions[$trigger['code']])) {
+                continue;
+            }
+
+            $this->model_setting_event->addEvent([
+                'code' => $trigger['code'],
+                'description' => $trigger['description'],
+                'trigger' => $trigger['path'] . '.' . $trigger['methods']['oc4'] . '/after',
+                'action' => $actions[$trigger['code']],
+                'status' => 1,
+                'sort_order' => 0,
+            ]);
+        }
+
         // A per-install cron token, minted once and kept for the life of the install
         // — including across a disconnect, because it is embedded in the url the
         // merchant gave their scheduler. Minted through Settings so install-time and
@@ -250,9 +304,24 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         $outbox = new Outbox($this->db);
         $outbox->drop();
 
+        // The report queue goes with it. It holds order ids, values and search terms
+        // for the merchant's own shop and would be an unidentifiable orphan table left
+        // behind — and the report table's whole point is that it is short-lived.
+        //
+        // BUILT WITHOUT A CLIENT, as it is everywhere outside the two unattended send
+        // paths. Dropping a table has no business holding something that can open a
+        // socket.
+        $reports = new OrderReports($this->db);
+        $reports->drop();
+
         // An event row outliving its handler is worse than useless: every product
         // save — and, for the storefront row, every page view — would try to call a
         // controller that no longer exists.
+        //
+        // ⚠ AND, SINCE ATTRIBUTION, EVERY ADD TO BASKET AND EVERY ORDER. The rows this
+        // now removes are registered against `checkout/cart.add` and `checkout/order`,
+        // so one missed code is not a slow back office — it is a fatal inside a
+        // shopper's checkout on a shop that believes it has uninstalled this module.
         //
         // ASKS `Events` FOR THE CODES rather than rebuilding them from the trigger
         // list, which is what this did and which could not see a code built any other

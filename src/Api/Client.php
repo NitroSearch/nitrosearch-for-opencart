@@ -37,6 +37,16 @@ final class Client
     /** @var string this shop's canonical base URL, as the service will see it */
     private $siteUrl;
 
+    /**
+     * HTTP statuses on an order report that mean "come back and ask again" rather
+     * than "this is the answer". Every 5xx is retryable too, and so is a transport
+     * failure, which has no status at all — both are tested separately in
+     * {@see reportOrder()} rather than enumerated here.
+     *
+     * @var array<int, int>
+     */
+    private static $orderRetryCodes = array(401, 408, 409, 423, 425, 429);
+
     public function __construct(Settings $settings, $siteUrl)
     {
         $this->settings = $settings;
@@ -271,6 +281,106 @@ final class Client
     public function ingestBatch(Batch $batch)
     {
         return $this->signed('POST', '/v1/ingest/batch', $batch->toJson());
+    }
+
+    /**
+     * Report one search-attributed order.
+     *
+     * WHAT LEAVES THE SHOP, AND NOTHING ELSE: a one-way hash of the order id, the
+     * value of the attributed lines, the currency, the moment the order was
+     * confirmed, the product ids of those lines and the term that led to them. Not
+     * the order id, not the customer, not the address, not the payment, not the
+     * order total, not the lines the shopper did not search for. The hash is salted
+     * with this install's own id, so the reference is stable for this shop — repeat
+     * reports of the same order collapse into one — and means nothing anywhere else.
+     *
+     * `occurred_at` IS PASSED THROUGH VERBATIM AND NEVER DERIVED HERE. It is part of
+     * the service's idempotency key, so a retry that recomputed it would land as a
+     * SECOND conversion row for the same order rather than colliding with the first.
+     * The caller stamps it once and stores the literal string; see
+     * {@see \NitroSearch\Sync\OrderReports}.
+     *
+     * ⚠ IT RETURNS A TRI-STATE, NOT A BOOLEAN, AND THAT IS A CORRECTION RATHER THAN
+     * A PREFERENCE. The obvious shape — "true means stop trying" — collapses two
+     * different things a 4xx can mean. Three of them are states the service fully
+     * expects a shop to come back from:
+     *
+     *   409  this shop is not verified YET — it verifies out of band, minutes later
+     *   423  the account is suspended — billing, and it gets fixed
+     *   429  throttled — /v1/orders shares a bucket with catalogue ingest, so a shop
+     *        in the middle of its first full sync can throttle its own order reports
+     *
+     * 408 and 425 join them because both say "ask again" in so many words, and a
+     * proxy in front of a merchant's own egress is as likely to produce them as the
+     * service is.
+     *
+     * Treating those as handled deletes a merchant's revenue permanently for a
+     * condition that clears on its own. So the classification is explicit:
+     *
+     *   done   202 (both `{accepted:true}` and `{accepted:false,reason:'disabled'}`),
+     *          any other 2xx, 403, and every 4xx not named below — a payload the
+     *          service refuses on its merits does not improve by being re-sent, and
+     *          a poison row must never park itself at the head of the queue
+     *   retry  401, 408, 409, 423, 425, 429, every 5xx, and a transport failure
+     *          (which has no status at all and is reported as 0)
+     *
+     * 401 IS RETRYABLE HERE AND WOULD NOT BE ON A CALLER THAT CACHED ITS HEADERS.
+     * {@see signed()} builds a fresh signature per call and the service's replay
+     * token is single-use, so a retry is a genuinely new request rather than a
+     * rejected replay of the old one.
+     *
+     * @param array{order_id: int, value_cents: int, currency: string, occurred_at: string, item_ids?: array<int, string>, q?: string} $report
+     *
+     * @return array{done: bool, retry: bool, status: int, error: string}
+     */
+    public function reportOrder(array $report)
+    {
+        $payload = array(
+            'order_ref' => hash(
+                'sha256',
+                $this->settings->installId() . '|order|' . (int) (isset($report['order_id']) ? $report['order_id'] : 0)
+            ),
+            'value_cents' => (int) (isset($report['value_cents']) ? $report['value_cents'] : 0),
+            'currency' => strtoupper((string) (isset($report['currency']) ? $report['currency'] : '')),
+            'occurred_at' => (string) (isset($report['occurred_at']) ? $report['occurred_at'] : ''),
+        );
+
+        // OMITTED WHEN EMPTY RATHER THAN SENT AS `[]` OR `''`. Both are optional on
+        // the wire, and an absent field is unambiguous where an empty one invites the
+        // service to record "this order was attributed to the empty search term".
+        $itemIds = array();
+        foreach ((array) (isset($report['item_ids']) ? $report['item_ids'] : array()) as $id) {
+            $id = (string) $id;
+            if ($id !== '') {
+                $itemIds[] = $id;
+            }
+        }
+        if (!empty($itemIds)) {
+            $payload['item_ids'] = array_values($itemIds);
+        }
+
+        $q = (string) (isset($report['q']) ? $report['q'] : '');
+        if ($q !== '') {
+            $payload['q'] = $q;
+        }
+
+        // A SHORT BUDGET, like the rest of the housekeeping calls. The flush that
+        // calls this runs from the cron endpoint and from the shutdown-deferred page
+        // tick; ten seconds is already generous for a request carrying six fields.
+        $res = $this->signed('POST', '/v1/orders', json_encode($payload), 10);
+
+        $status = (int) $res['status'];
+        $error = (string) $res['error'];
+
+        if (!empty($res['ok'])) {
+            return array('done' => true, 'retry' => false, 'status' => $status, 'error' => '');
+        }
+
+        if ($status === 0 || $status >= 500 || in_array($status, self::$orderRetryCodes, true)) {
+            return array('done' => false, 'retry' => true, 'status' => $status, 'error' => $error);
+        }
+
+        return array('done' => true, 'retry' => false, 'status' => $status, 'error' => $error);
     }
 
     /**

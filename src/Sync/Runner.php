@@ -79,6 +79,56 @@ final class Runner
     }
 
     /**
+     * The durable order-report queue, wired to send.
+     *
+     * ⚠ THIS IS THE ONLY ASSEMBLY OF `OrderReports` THAT CARRIES A CLIENT, and every
+     * caller of it must be an unattended path — the cron endpoint and the
+     * shutdown-deferred page tick, and nothing else. The checkout path builds its own
+     * queue object WITHOUT a client (see {@see OrderAttribution}), so the thing that
+     * can open a socket is never handed to a shopper's request. That is the difference
+     * between "the checkout does not send" and "the checkout cannot send", and only
+     * the second one survives somebody editing the file.
+     *
+     * A NEW CLIENT RATHER THAN THE DRAIN'S, deliberately. Each `Client` call builds a
+     * fresh signature with a single-use token, so sharing an instance buys nothing and
+     * a shared one would only invite caching the headers.
+     *
+     * @return OrderReports
+     */
+    public function orderReports()
+    {
+        return new OrderReports(
+            $this->db,
+            new Client($this->settings, ShopUrl::resolve()),
+            $this->settings
+        );
+    }
+
+    /**
+     * The checkout-path half of attribution: capture, resolve, promote.
+     *
+     * ⚠ IT IS NOT GIVEN A CLIENT AND MUST NEVER BE. Everything it does runs inside a
+     * shopper's own request — an add to basket, an order being written, a gateway
+     * confirming payment — where a slow or unreachable service would become a slow or
+     * broken checkout, and no exception handler anywhere can undo a timeout the
+     * shopper has already waited out. It writes to a local table and stops.
+     *
+     * THE SESSION IS A PARAMETER BECAUSE IT IS SOMETIMES ABSENT, and that absence is
+     * a real case rather than a defensive one: the confirmation hook is frequently a
+     * server-to-server gateway callback with no shopper session at all, and it needs
+     * none, because the row it promotes was written earlier by the request that did
+     * have one.
+     *
+     * @param object|null $session OpenCart's session object, where the caller has one
+     *
+     * @return OrderAttribution
+     */
+    public function orderAttribution($session = null)
+    {
+        return new OrderAttribution($this->db, $this->settings, $session);
+    }
+
+    /**
      * @return Schema
      */
     public function schema()

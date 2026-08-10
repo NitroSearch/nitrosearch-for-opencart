@@ -105,8 +105,20 @@ done
 
 # A loop over nothing passes, and "Guards" would print above it. If the glob ever
 # stops matching, the build must stop rather than quietly package an ungated tree.
-[ "$_guards_run" -ge 3 ] \
-    || die "only ${_guards_run} guard(s) ran — bin/check-*.sh matched less than expected, so this build is not gated"
+#
+# THE FLOOR IS DERIVED FROM WHAT IS ON DISK, not written down. It used to be a
+# hardcoded `-ge 3`, which is the same enumeration mistake the comment above warns
+# about one level up: it stops rising the moment a fourth guard exists, so a guard
+# that is present but silently fails to run — an unreadable file, a glob that no
+# longer matches it, a name that drifted — would be invisible, and the build would
+# report "Guards" over a tree it never gated. Counting the files and requiring every
+# one of them to have run means adding a guard is one file and nothing else.
+#
+# The `-ge 4` is a second, independent floor for the case where BOTH numbers go to
+# zero together, which is what a mistyped `find` or an emptied `bin/` looks like.
+_guards_present="$(find ./bin -maxdepth 1 -name 'check-*.sh' -type f 2>/dev/null | wc -l | tr -d ' ')"
+[ "$_guards_run" -eq "$_guards_present" ] && [ "$_guards_run" -ge 4 ] \
+    || die "${_guards_run} guard(s) ran but ${_guards_present} exist on disk (floor 4) — this build is not gated"
 
 # ── The test suite, before anything is packaged ──────────────────────────────
 #

@@ -96,6 +96,144 @@ final class Events
     }
 
     /**
+     * The add-to-cart trigger — order attribution's only window onto a search term.
+     *
+     * THIS IS THE ONE MOMENT AT WHICH A SEARCH AND A PRODUCT ARE IN THE SAME REQUEST.
+     * The basket keeps no memory of how anything got into it, and the order keeps
+     * none either, so a term not written down here is a term that no longer exists by
+     * the time the shopper pays. That is why the handler writes to the shop's own
+     * session rather than deferring the question to checkout: there is nothing to
+     * defer it to.
+     *
+     * A CONTROLLER EVENT, unlike the order rows below, which are model events. The
+     * distinction is not cosmetic — a controller event's arguments are the method's
+     * own arguments, and `add()` takes none, so the handler reads the request body
+     * directly. Expecting the POST in `$args` is the silent-empty failure this note
+     * exists to prevent.
+     *
+     * THE SEPARATOR IS THE ADAPTER'S JOB, exactly as with the model triggers above:
+     * `catalog/controller/checkout/cart/add/after` on OpenCart 3 and
+     * `catalog/controller/checkout/cart.add/after` on OpenCart 4. So is the ACTION,
+     * which names a controller method and is spelled differently again per major.
+     *
+     * THE CODE IS FIXED AND MAJOR-AGNOSTIC rather than derived from the method name.
+     * {@see codes()} builds the product codes as `nitrosearch_<method>`, and for the
+     * confirmation hook below the method name DIFFERS BETWEEN MAJORS — so a derived
+     * code would give uninstall a list that matches on one major and misses on the
+     * other. One fixed code is correct on both.
+     *
+     * @return array{code: string, path: string, methods: array<string, string>, description: string}
+     */
+    public static function cartTrigger()
+    {
+        return array(
+            'code' => 'nitrosearch_cart_add',
+            'path' => 'catalog/controller/checkout/cart',
+            'methods' => array('oc3' => 'add', 'oc4' => 'add'),
+            'description' => 'NitroSearch: note a search-driven add to basket',
+        );
+    }
+
+    /**
+     * The order lifecycle rows — where attribution becomes durable, and then real.
+     *
+     * ⚠ THESE DIFFER BETWEEN THE MAJORS IN THREE WAYS, NOT ONE, and only the first is
+     * the separator split the rest of this file already handles:
+     *
+     *   1. SEPARATOR.   `order/addOrder/after` against `order.addOrder/after`.
+     *   2. METHOD NAME. The confirmation hook is `addOrderHistory` on OpenCart 3 and
+     *      `addHistory` on OpenCart 4. A DIFFERENT NAME, not a different spelling of
+     *      the same one — treating it as a separator difference registers a row that
+     *      can never fire on one of the two majors, and nothing anywhere says so.
+     *   3. WHETHER THE ROW EXISTS AT ALL. OpenCart 4's confirm controller calls
+     *      `editOrder` on an order it already created; OpenCart 3's has no such branch
+     *      and calls `addOrder` again on every render of the confirm page. So the
+     *      `editOrder` row belongs to OpenCart 4 and there is nothing for it to point
+     *      at on OpenCart 3.
+     *
+     * `methods` IS KEYED BY MAJOR FOR EXACTLY THAT REASON, and the absence of a key is
+     * the statement "this major has no such hook". An adapter that iterates blindly
+     * would build `catalog/model/checkout/order/editOrder/after` on OpenCart 3 — a row
+     * that is registered, is counted, looks right in a `SELECT`, and never fires.
+     *
+     * WHY TWO SEPARATE ROWS POINT AT ONE HANDLER on OpenCart 4: the basket can still
+     * change between creation and confirmation, so the report has to be re-resolved
+     * from the order's own lines rather than written once and trusted. The write is an
+     * upsert for that reason.
+     *
+     * THE ORDER IS NOT A SALE AT ANY OF THE FIRST TWO. OpenCart writes the row with
+     * `order_status_id` 0 and only a payment extension calling the history method with
+     * a configured status makes it real — frequently from a server-to-server gateway
+     * callback with no shopper session at all. That split is the whole reason the work
+     * is in two phases rather than one.
+     *
+     * @return array<int, array{code: string, path: string, methods: array<string, string>, description: string}>
+     */
+    public static function orderTriggers()
+    {
+        return array(
+            array(
+                'code' => 'nitrosearch_order_created',
+                'path' => 'catalog/model/checkout/order',
+                'methods' => array('oc3' => 'addOrder', 'oc4' => 'addOrder'),
+                'description' => 'NitroSearch: resolve a search-attributed order',
+            ),
+            array(
+                'code' => 'nitrosearch_order_edited',
+                'path' => 'catalog/model/checkout/order',
+                // OpenCart 4 only — see the third difference in the docblock above.
+                'methods' => array('oc4' => 'editOrder'),
+                'description' => 'NitroSearch: re-resolve a search-attributed order',
+            ),
+            array(
+                'code' => 'nitrosearch_order_confirmed',
+                'path' => 'catalog/model/checkout/order',
+                'methods' => array('oc3' => 'addOrderHistory', 'oc4' => 'addHistory'),
+                'description' => 'NitroSearch: promote a report once the order is a sale',
+            ),
+        );
+    }
+
+    /**
+     * The order id a fired order event is about.
+     *
+     * THE ID IS IN A DIFFERENT PLACE DEPENDING ON THE METHOD, and this is the same
+     * trap {@see resolve()} documents for products, in a place where it costs more:
+     *
+     *   addOrder(array $data): int             the RETURN value
+     *   editOrder(int $id, array $data)        `$args[0]`
+     *   addHistory(int $id, int $status, …)    `$args[0]`   OpenCart 4
+     *   addOrderHistory(int $id, int $s, …)    `$args[0]`   OpenCart 3, same hook
+     *
+     * ⚠ THE FALLBACK IS GUARDED WITH `is_scalar` AND THAT GUARD IS THE ENTIRE CARE IN
+     * THIS FUNCTION. `addOrder`'s first argument is the order DATA ARRAY, and casting a
+     * non-empty array to int in PHP yields **1** — no error, no warning, just the
+     * number one. An unguarded fallback would therefore resolve every newly created
+     * order on the shop to order id 1: one report, overwritten forever, carrying some
+     * other customer's basket. The array can never be mistaken for an id because it is
+     * never read as one.
+     *
+     * TAKING THE RETURN VALUE FIRST is what makes one function serve all four shapes
+     * without asking which route fired: only `addOrder` returns anything, and the two
+     * that do not return null, which is not scalar.
+     *
+     * @param array<int, mixed> $args   the method's arguments
+     * @param mixed             $output the method's return value
+     *
+     * @return int 0 when nothing usable was found
+     */
+    public static function orderId(array $args, $output)
+    {
+        $id = is_scalar($output) ? (int) $output : 0;
+
+        if ($id <= 0 && isset($args[0]) && is_scalar($args[0])) {
+            $id = (int) $args[0];
+        }
+
+        return $id > 0 ? $id : 0;
+    }
+
+    /**
      * Every event code this module registers.
      *
      * EXISTS SO UNINSTALL CANNOT MISS ONE. Both adapters used to delete events by
@@ -103,6 +241,12 @@ final class Events
      * a code built any other way — and the storefront row is built another way. An
      * event row outliving its handler is worse than an orphan setting: every page
      * view calls a controller that is no longer there.
+     *
+     * ⚠ AND NOW EVERY ADD-TO-CART AND EVERY ORDER, which is to say the checkout path.
+     * The attribution rows added below are registered against `checkout/cart.add` and
+     * `checkout/order`, so a code this list cannot see leaves a merchant who
+     * uninstalled the module with a dead controller call inside every purchase their
+     * shop attempts. The product rows were only ever a slow back office.
      *
      * @return array<int, string>
      */
@@ -116,6 +260,18 @@ final class Events
 
         $storefront = self::storefrontTrigger();
         $codes[] = $storefront['code'];
+
+        $cart = self::cartTrigger();
+        $codes[] = $cart['code'];
+
+        // EVERY MAJOR'S ROWS, NOT THIS MAJOR'S. `editOrder` exists on OpenCart 4 only,
+        // and this list is asked for by an uninstall that has no idea which major
+        // wrote the rows it is deleting — a shop restored from a backup, or migrated,
+        // can carry rows the running major never registered. Deleting a code that was
+        // never inserted costs one no-op; missing one costs a fatal per checkout.
+        foreach (self::orderTriggers() as $trigger) {
+            $codes[] = $trigger['code'];
+        }
 
         return $codes;
     }

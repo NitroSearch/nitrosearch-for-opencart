@@ -13,6 +13,7 @@ require_once DIR_SYSTEM . 'library/nitrosearch/autoload.php';
 use NitroSearch\Admin\Actions;
 use NitroSearch\Settings;
 use NitroSearch\Sync\Events;
+use NitroSearch\Sync\OrderReports;
 use NitroSearch\Sync\Outbox;
 use NitroSearch\Sync\Runner;
 use NitroSearch\Support\ShopUrl;
@@ -205,6 +206,21 @@ class ControllerExtensionModuleNitrosearch extends Controller
         // a product does not lose that first change to a missing table.
         $this->db->query(Outbox::schema());
 
+        // The order-report queue, for the same reason and one more. A shop that
+        // installs and takes an order in the next minute must not lose it to a missing
+        // table — and unlike a catalogue row, an order report cannot be rebuilt later
+        // from anything: the link between a search term and a line exists only in the
+        // shopper's session, for the length of one visit.
+        //
+        // ⚠ THE STATEMENT CARRIES `ENGINE=InnoDB` EXPLICITLY, WHICH MATTERS HERE AND
+        // ON NO OTHER MAJOR. OpenCart 3 still creates MyISAM tables, and MyISAM takes a
+        // TABLE-level lock on every write. This table is written inside a shopper's
+        // checkout, so inheriting the default would make every concurrent checkout on a
+        // busy shop queue behind every other one — the "never slow a merchant's
+        // checkout" rule failing as a performance cliff rather than as an error anybody
+        // would see. See {@see OrderReports::schema()}.
+        $this->db->query(OrderReports::schema());
+
         // OpenCart 3 spells a trigger and an action with SLASHES throughout, matching
         // its own router. OpenCart 4 uses a dot before the method in both. The rows
         // differ; the handler they point at does not.
@@ -229,6 +245,64 @@ class ControllerExtensionModuleNitrosearch extends Controller
             'extension/nitrosearch/module/nitrosearch/onStorefront'
         );
 
+        // ── Search → order attribution ──────────────────────────────────────────
+        //
+        // CATALOG ROWS, LIKE THE STOREFRONT ONE ABOVE AND UNLIKE THE FOUR PRODUCT ROWS,
+        // so their actions name the catalog controller — `extension/nitrosearch/…`
+        // where this back-office half is `extension/module/…`. That the two halves of
+        // one module follow different directory conventions is OpenCart 3's
+        // arrangement, not ours, and it is the easiest line here to get wrong.
+        //
+        // ⚠ THESE RUN ON THE CHECKOUT PATH, WHICH RAISES THE COST OF EVERY MISTAKE IN
+        // THIS BLOCK. A product row that points at nothing is a slow back office; one
+        // of these pointing at nothing is a missing controller called inside every
+        // add-to-cart and every order a shop takes. That is also why {@see
+        // Events::codes()} is asked for the uninstall list rather than it being
+        // rebuilt here — see uninstall() below.
+        $cart = Events::cartTrigger();
+        $this->model_setting_event->addEvent(
+            $cart['code'],
+            $cart['path'] . '/' . $cart['methods']['oc3'] . '/after',
+            'extension/nitrosearch/module/nitrosearch/onCartAdd'
+        );
+
+        // THE HANDLER NAMES ARE WRITTEN OUT HERE rather than derived from the code,
+        // because a registration is only worth anything if the method on the other end
+        // of it exists — and these literals are what lets that be checked without
+        // booting a shop. `Events` owns the triggers, which is where the two majors
+        // genuinely disagree; this file owns the action, which is spelled with a slash
+        // on this major and a dot on the other.
+        $handlers = array(
+            'nitrosearch_order_created' => 'onOrderCreated',
+            'nitrosearch_order_confirmed' => 'onOrderConfirmed',
+        );
+
+        foreach (Events::orderTriggers() as $order) {
+            // A HOOK THIS MAJOR DOES NOT HAVE. OpenCart 4's confirm controller calls
+            // `editOrder` on an order it already created; this one has no such branch
+            // and calls `addOrder` again on every render of the confirm page. The
+            // absence of an `oc3` method is that statement, made once in `Events` where
+            // both majors can be read side by side, rather than as a version test here.
+            if (!isset($order['methods']['oc3'])) {
+                continue;
+            }
+
+            // A code with no handler on this side. Registering it against a guessed
+            // method would point a checkout-path row at something that may not exist;
+            // registering nothing leaves that part of attribution simply off, which is
+            // the recoverable direction. `Events::codes()` still knows the code, so an
+            // uninstall removes any row an older version did write.
+            if (!isset($handlers[$order['code']])) {
+                continue;
+            }
+
+            $this->model_setting_event->addEvent(
+                $order['code'],
+                $order['path'] . '/' . $order['methods']['oc3'] . '/after',
+                'extension/nitrosearch/module/nitrosearch/' . $handlers[$order['code']]
+            );
+        }
+
         // A per-install cron token, minted once and kept for the life of the install
         // — including across a disconnect, because it is embedded in the url the
         // merchant gave their scheduler. Minted through Settings so install-time and
@@ -252,6 +326,14 @@ class ControllerExtensionModuleNitrosearch extends Controller
         // is an orphan table a merchant cannot identify or safely remove.
         $outbox = new Outbox($this->db);
         $outbox->drop();
+
+        // The order-report queue goes with it, and its rows are worth a sentence: what
+        // is lost here is any report not yet sent. That is deliberate — a merchant who
+        // uninstalls has withdrawn consent for the thing those rows exist to do, and
+        // leaving a table of order values behind on their database would be the wrong
+        // answer to both questions. Built without a client, so this cannot send.
+        $reports = new OrderReports($this->db);
+        $reports->drop();
 
         // An event row outliving its handler is worse than useless: every product
         // save — and, for the storefront row, every page view — would try to call a

@@ -138,8 +138,8 @@ and a search box that cannot search is worse than none.
 
 ## Privacy
 
-The module sends your catalogue — the same product data your shoppers already see — and nothing
-else. It does not send customer records, addresses, payment details, or order contents.
+The module sends your catalogue — the same product data your shoppers already see. It does not send
+customer records, addresses, payment details, or anything that identifies a shopper.
 
 **Search usage, and how to turn it off.** The storefront search panel also reports anonymous usage —
 what was searched for, what was clicked, and whether a search found nothing — so your NitroSearch
@@ -152,8 +152,20 @@ That switch is new. Releases 1.0.0 and 1.1.0 sent the usage signal with no way t
 setting did not exist. If you are upgrading, the switch starts **on**, matching what your shop was
 already doing, so nothing changes until you change it.
 
-It also does not report orders. Search-to-order attribution exists on some of our other connectors
-and **is not built here**; if that changes, this section changes with it.
+**Orders that came from a search, and exactly what that sends.** This section said the module did
+not report orders, and promised to change if that ever stopped being true. It has: from 1.3.0, when
+a shopper searches, adds one of the results to their basket and goes on to order, the module reports
+that order so your dashboard can show what search actually earned you.
+
+What it sends, in full: a **one-way hash of the order id** — not your order number, and it cannot be
+turned back into one — the **order total and currency**, the **ids of the products** in it, and the
+**search term** that led there. Nothing else. No customer, no address, no payment detail, no line
+prices, no quantities, no status.
+
+It rides the same switch: **Configure → Share anonymous search usage**. Turn that off and no order is
+reported, exactly as no search is. Reports are queued in your own database and sent by the same
+background schedule as everything else — **never during a shopper's checkout**, so if our service is
+slow or down, your checkout is unaffected and the report waits.
 
 ## Building from source
 

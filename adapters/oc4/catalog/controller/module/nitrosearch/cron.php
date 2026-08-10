@@ -58,6 +58,30 @@ class Cron extends \Opencart\System\Engine\Controller
         $runner->fullSync()->resumeIfStalled();
 
         $result = $runner->drain()->run(20);
+
+        // Order attribution's send step, and the ONLY network call that feature ever
+        // makes. Everything upstream of it — the search marker, the resolution of an
+        // order into a report, the promotion once payment lands — runs inside a
+        // shopper's request and writes to a local table and nothing more. This is the
+        // other end of that arrangement: an unattended request, with no shopper
+        // waiting on it, spending the time.
+        //
+        // UNCONDITIONAL, AND NOT GATED ON THERE BEING ANYTHING READY. `flush()` sweeps
+        // stale rows before it looks at the queue, and the rows most in need of
+        // sweeping are the ones that will never become ready — orders abandoned before
+        // payment, of which this major's confirm flow leaves one per reload. A shop
+        // whose queue is permanently empty of READY rows is exactly the shop whose
+        // table would otherwise grow without limit.
+        //
+        // TEN PER TICK, against the page-load fallback's three: this request has no
+        // shopper attached and can afford them, and ten is far inside the per-shop rate
+        // the service allows. It stops at the first retryable failure regardless.
+        //
+        // IT CANNOT THROW past this line by its own contract, and the endpoint would
+        // survive it if it did — but a fault here must not cost the merchant the drain
+        // result they came for, so it is the last thing done before answering.
+        $reports = $runner->orderReports()->flush(10);
+
         $settings->update(['DRAIN_RAN_AT' => time()]);
 
         $this->respond([
@@ -67,6 +91,12 @@ class Cron extends \Opencart\System\Engine\Controller
             'stopped' => $result['stopped'],
             'pending' => $result['pending'],
             'full_sync_active' => $runner->fullSync()->isActive(),
+            // Reported so a merchant, or whoever is helping them, can tell "attribution
+            // is off" from "attribution has nothing to send" without database access.
+            // The two look identical from the Configure screen and always will.
+            'reports_sent' => $reports['sent'],
+            'reports_ready' => $reports['ready'],
+            'reports_stopped' => $reports['stopped'],
         ], 200);
     }
 

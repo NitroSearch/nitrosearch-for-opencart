@@ -6,6 +6,24 @@ All notable changes to this module are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-08-10
+
+### Added
+
+- **Your dashboard can now show what your search actually earned.** When a shopper searches, adds
+  one of those results to their basket and goes on to order, the module reports that order — so the
+  revenue your search brought in stops being a guess. The other connectors have had this; OpenCart
+  did not, and the storefront half was already sending the signal with nothing here to receive it.
+
+  It reports a one-way hash of the order id, the total and currency, the product ids and the search
+  term — and nothing else. See **Privacy** in the README for the full list, and
+  **Configure → Share anonymous search usage** to turn it off.
+
+  **It cannot affect your checkout.** Nothing is sent while a shopper is checking out. The report is
+  written to your own database inside the order, and sent later by the same background schedule that
+  syncs your catalogue; if our service is unreachable the report simply waits and is retried. An
+  order is never reported twice, however many times its status changes.
+
 ## [1.2.0] — 2026-08-06
 
 ### Added

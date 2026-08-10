@@ -64,6 +64,18 @@ final class PageLoadTick
      */
     const BUDGET_SECONDS = 5;
 
+    /**
+     * Order reports per fallback tick.
+     *
+     * A COUNT RATHER THAN A TIME BUDGET, because each report is one small signed POST
+     * with a short timeout and the queue is measured in orders rather than in
+     * products. Three is chosen against the same constraint as {@see BUDGET_SECONDS}
+     * — this rides a shopper's page and must not be the reason a host's time limit is
+     * reached — and against the service's own per-shop rate limit, which a shop
+     * ticking every 90 seconds cannot approach at this size.
+     */
+    const REPORT_BUDGET = 3;
+
     /** @var Runner */
     private $runner;
 
@@ -101,7 +113,14 @@ final class PageLoadTick
         // the walk is what refills it. Checking only the queue would stop a
         // catalogue mid-import and never restart it.
         $hasWork = $this->runner->outbox()->pendingCount() > 0
-            || (bool) $settings->get('FULLSYNC_ACTIVE');
+            || (bool) $settings->get('FULLSYNC_ACTIVE')
+            // ⚠ AN ORDER REPORT IS WORK EVEN ON A SHOP WHOSE CATALOGUE NEVER CHANGES,
+            // and leaving this term out is the quiet way to ship attribution that does
+            // nothing. A settled catalogue with an empty outbox is the steady state of
+            // every healthy shop — and the shops with no cron, which is the only reason
+            // this class exists, are exactly the ones with nowhere else to send from.
+            // Without this the reports queue up correctly, forever.
+            || $this->reportsWaiting();
 
         // ⚠ THE HEARTBEAT IS A SECOND, INDEPENDENT REASON TO RUN, and collapsing the
         // two into one condition is the bug this arrangement exists to prevent. A
@@ -165,6 +184,57 @@ final class PageLoadTick
             // A fatal here lands in a shopper's request. There is nothing useful to
             // do with it but record it where the merchant will see it.
             self::note($runner, $e->getMessage());
+        }
+
+        // ── Order reports ────────────────────────────────────────────────────────
+        //
+        // ⚠ ITS OWN TRY, OUTSIDE THE ONE ABOVE, AND THAT IS THE POINT OF WRITING IT
+        // TWICE. A catalogue drain that throws — one unreadable product, one host that
+        // times out mid-batch — would otherwise take every order report on the shop
+        // with it, on every tick, for as long as the catalogue fault lasted. The two
+        // queues have nothing to do with each other and a fault in one must not
+        // silence the other. Revenue attribution is also the harder failure to notice:
+        // an unsynced product is visible in the shop, an unsent report is visible
+        // nowhere at all.
+        //
+        // THREE PER TICK, against the cron endpoint's ten. This is riding a shopper's
+        // page load and has to finish inside whatever time limit the host has left;
+        // the cron request has one to itself. A backlog drains over several ticks
+        // rather than in one, which is the correct trade on the path that is not ours.
+        //
+        // `flush()` DOES NOT THROW BY ITS OWN CONTRACT — this pair is here because a
+        // contract is a promise about today's code and this runs on a merchant's live
+        // storefront.
+        try {
+            $runner->orderReports()->flush(self::REPORT_BUDGET);
+        } catch (\Exception $e) {
+            self::note($runner, $e->getMessage());
+        } catch (\Throwable $e) {
+            self::note($runner, $e->getMessage());
+        }
+    }
+
+    /**
+     * Are there order reports waiting to go out?
+     *
+     * ⚠ SEALED, AND NOT AS A FORMALITY. This is asked BEFORE the shutdown handler is
+     * registered, so it runs while the shopper's page is still being assembled — the
+     * one question in {@see maybeRun()} that touches a table which may not exist yet.
+     * A shop that upgraded the module without reinstalling it has the new code and the
+     * old schema, and an uncaught "table doesn't exist" there is a storefront error on
+     * a page the merchant is selling from. False is the honest answer in that state:
+     * nothing can be waiting in a table that is not there.
+     *
+     * @return bool
+     */
+    private function reportsWaiting()
+    {
+        try {
+            return $this->runner->orderReports()->readyCount() > 0;
+        } catch (\Exception $e) {
+            return false;
+        } catch (\Throwable $e) {
+            return false;
         }
     }
 

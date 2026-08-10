@@ -12,6 +12,7 @@ namespace Opencart\Catalog\Controller\Extension\Nitrosearch\Module;
 
 require_once DIR_EXTENSION . 'nitrosearch/system/library/nitrosearch/autoload.php';
 
+use NitroSearch\Sync\Events;
 use NitroSearch\Sync\Runner;
 
 /**
@@ -92,6 +93,153 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
             // Nothing to do and nowhere safe to say it: a storefront page is not
             // ours to interrupt, and the Configure screen's error slot is written by
             // the paths that can reach a database.
+        } catch (\Throwable $e) {
+        }
+    }
+
+    /**
+     * Note that a product reached the basket from a search.
+     *
+     *   trigger  catalog/controller/checkout/cart.add/after
+     *   action   extension/nitrosearch/module/nitrosearch.onCartAdd
+     *
+     * THE ONLY MOMENT THE LINK EXISTS. The widget posts `ns_search=1` and `ns_q`
+     * alongside the shop's own add-to-cart fields; nothing downstream carries either
+     * one. The basket has no memory of how anything got into it and neither does the
+     * order, so a term not written to the session here is a term that is gone.
+     *
+     * THE POST IS READ FROM THE REQUEST, NOT FROM `$args`. This is a CONTROLLER event,
+     * and a controller event's arguments are the method's own arguments —
+     * `Cart::add()` takes none, so `$args` is empty and always will be. Reaching for
+     * the product id there yields nothing, silently, on every add-to-cart in the shop.
+     *
+     * ⚠ EVERY PARAMETER HAS A DEFAULT and the route bail is the first statement, for
+     * the reasons {@see onStorefront()} sets out at length: on this major an event
+     * handler is a public controller method and therefore a storefront url anyone can
+     * request, and the dispatcher invokes it with no arguments at all.
+     *
+     * IT WRITES TO THE SHOP'S OWN SESSION AND NOTHING ELSE — no table, no socket. See
+     * {@see \NitroSearch\Sync\OrderAttribution} for why the object it reaches cannot
+     * send even if a later edit asked it to.
+     *
+     * @param string $route
+     * @param array  $args
+     * @param mixed  $output
+     */
+    public function onCartAdd(&$route = null, &$args = null, &$output = null): void
+    {
+        if ($route === null) {
+            return;
+        }
+
+        try {
+            $post = is_array($this->request->post) ? $this->request->post : array();
+
+            $runner = new Runner($this->db);
+            $runner->orderAttribution($this->session)->captureAdd($post);
+        } catch (\Exception $e) {
+            // A checkout is not ours to break and an attribution is worth nothing
+            // beside one. Both catches, because the thing an unfamiliar shop produces
+            // is as often a TypeError as an exception.
+        } catch (\Throwable $e) {
+        }
+    }
+
+    /**
+     * Resolve the session marker into a durable row, inside the shopper's request.
+     *
+     *   trigger  catalog/model/checkout/order.addOrder/after
+     *   trigger  catalog/model/checkout/order.editOrder/after
+     *   action   extension/nitrosearch/module/nitrosearch.onOrderCreated
+     *
+     * TWO TRIGGERS, ONE HANDLER, AND THE ORDER IS NOT A SALE AT EITHER. OpenCart
+     * writes the row with `order_status_id` 0 and this major's confirm controller then
+     * calls `editOrder` on it while the basket is still changeable. The report is
+     * therefore re-resolved rather than written once and trusted, and the write is an
+     * upsert. Promotion is a separate hook — see {@see onOrderConfirmed()}.
+     *
+     * WHY IT RUNS HERE AT ALL, rather than only at confirmation: confirmation is
+     * frequently a server-to-server gateway callback with no shopper session, and the
+     * session is the only place the search term lives. Resolving it while the shopper
+     * is still on the request is what makes the feature work on gateway-driven shops
+     * instead of only on cash-on-delivery ones.
+     *
+     * ⚠ THE ID COMES FROM A DIFFERENT PLACE PER METHOD and {@see Events::orderId()}
+     * is where that is spelled out — `addOrder` returns it, `editOrder` takes it. Its
+     * `is_scalar` guard is what stops `addOrder`'s data array casting to the integer 1
+     * and attributing every order in the shop to order number one.
+     *
+     * IT QUEUES AND STOPS. No network call is reachable from here; the queue object
+     * this builds has no client. The send happens on the cron endpoint and the
+     * shutdown-deferred page tick, neither of which is a shopper waiting.
+     *
+     * @param string $route
+     * @param array  $args
+     * @param mixed  $output the new order id, on the creating call
+     */
+    public function onOrderCreated(&$route = null, &$args = null, &$output = null): void
+    {
+        if ($route === null) {
+            return;
+        }
+
+        try {
+            $orderId = Events::orderId(is_array($args) ? $args : array(), $output);
+
+            if ($orderId <= 0) {
+                return;
+            }
+
+            $runner = new Runner($this->db);
+            $runner->orderAttribution($this->session)->orderCreated($orderId);
+        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+        }
+    }
+
+    /**
+     * Promote the pending row once the order is really a sale.
+     *
+     *   trigger  catalog/model/checkout/order.addHistory/after
+     *   action   extension/nitrosearch/module/nitrosearch.onOrderConfirmed
+     *
+     * ⚠ `addHistory` ON THIS MAJOR, `addOrderHistory` ON OPENCART 3. A different name,
+     * not a different spelling — the dot-versus-slash split every other row here
+     * survives does not cover it, and a trigger built by respelling the OpenCart 3
+     * name registers a row on this major that can never fire. The report table would
+     * fill with pending rows and send none, with nothing anywhere to say why.
+     *
+     * NO SESSION IS PASSED, AND NONE IS NEEDED. This hook routinely runs in a gateway
+     * callback that has no shopper attached; everything it needs was written to the
+     * table by the request that did have one.
+     *
+     * ⚠ THE STATUS IS NOT TAKEN FROM `$args`, THOUGH THE HOOK HANDS IT OVER.
+     * `\NitroSearch\Sync\OrderAttribution::orderConfirmed()` deliberately has no
+     * parameter for it and re-reads `order_status_id` from the order's own row, so a
+     * hand-crafted request to this method's public url cannot assert that an unpaid
+     * order was paid. `$args[0]` is used only as something to look up, which means the
+     * worst a forged call can do is re-assert what the shop's own tables already say.
+     *
+     * @param string $route
+     * @param array  $args
+     * @param mixed  $output
+     */
+    public function onOrderConfirmed(&$route = null, &$args = null, &$output = null): void
+    {
+        if ($route === null) {
+            return;
+        }
+
+        try {
+            $orderId = Events::orderId(is_array($args) ? $args : array(), null);
+
+            if ($orderId <= 0) {
+                return;
+            }
+
+            $runner = new Runner($this->db);
+            $runner->orderAttribution()->orderConfirmed($orderId);
+        } catch (\Exception $e) {
         } catch (\Throwable $e) {
         }
     }
