@@ -460,7 +460,20 @@ check_attribution() {
       fi
 
       block="$(method_block "$file" "$handler")"
-      sig="$(printf '%s\n' "$block" | head -n 1)"
+
+      # ⚠ NOT `printf … | head -n 1`. `head` is an early-exiting consumer exactly like
+      # `grep -q`: it closes the pipe after the line it wanted, `printf` takes SIGPIPE
+      # and exits 141, and `pipefail` makes the command substitution fail. Inside an
+      # assignment that is fatal under `set -e` — the script exits with NO message at
+      # all, which is how this presented: CI showed the build's own "refused this tree"
+      # and not one FAIL line, on PHP 8.1 only, while every other version passed.
+      #
+      # Whether it fires depends on how much `printf` still has to write when `head`
+      # leaves, so it is the same race as the `grep -q` family and just as unreproducible
+      # on demand — 10/10 clean runs locally on the version that was failing in CI.
+      # Parameter expansion takes the first line without a pipe, so there is nothing to
+      # race.
+      sig="${block%%$'\n'*}"
 
       # (c) EVERY PARAMETER DEFAULTED — see params_defaulted().
       case "$(params_defaulted "$sig")" in
