@@ -45,7 +45,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-VERSION="$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' adapters/oc4/install.json | head -n1)"
+VERSION="$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' adapters/oc4/install.json | sed -n '1p')"
 [ -n "$VERSION" ] || { echo "could not read the version from adapters/oc4/install.json" >&2; exit 1; }
 
 OUT="dist"
@@ -204,5 +204,5 @@ say "Contents"
 for f in "$OUT"/nitrosearch-oc3-"${VERSION}".ocmod.zip "$OUT"/nitrosearch.ocmod.zip; do
     [ -f "$f" ] || continue
     printf '\n%s\n' "$f"
-    unzip -l "$f" | sed -n '4,$p' | head -n 40
+    unzip -l "$f" | sed -n '4,$p' | head -n 40 || true
 done

@@ -170,12 +170,12 @@ live_word_hits() {
 method_block() {
   strip_comments "$1" | awk -v m="$2" '
     !inside && $0 ~ ("function[ \t]+" m "[ \t]*\\(") { inside = 1 }
-    inside {
+    inside && !done {
       print
       o = gsub(/\{/, "{"); c = gsub(/\}/, "}")
       depth += o - c
       if (o > 0) opened = 1
-      if (opened && depth <= 0) exit
+      if (opened && depth <= 0) done = 1
     }
   '
 }
@@ -228,18 +228,25 @@ handler_file() {
 # absolute file path and a full backtrace — at HTTP 200. OpenCart's own bundled
 # handlers do exactly that on a stock store.
 params_defaulted() {
+  # ⚠ `done = 1; next` RATHER THAN `exit`. This awk consumes a pipe, so leaving early
+  # closes it and the `printf` behind it takes SIGPIPE — the same fault that emptied
+  # this guard's own diagnosis elsewhere in this file. The producer here is one short
+  # line and would almost always win the race, but "almost always" is the entire
+  # problem with the construct: it is what made the other instances survive review.
+  # The flag keeps exactly one answer per invocation while reading to the end.
   printf '%s\n' "$1" | awk '
-    {
-      i = index($0, "(");     if (i == 0) { print "no-parens"; exit }
+    !done {
+      i = index($0, "(");     if (i == 0) { print "no-parens"; done = 1; next }
       s = substr($0, i + 1)
-      j = index(s, ")");      if (j == 0) { print "no-parens"; exit }
+      j = index(s, ")");      if (j == 0) { print "no-parens"; done = 1; next }
       s = substr(s, 1, j - 1)
-      if (s ~ /^[ \t]*$/)     { print "no-params"; exit }
+      if (s ~ /^[ \t]*$/)     { print "no-params"; done = 1; next }
       n = split(s, p, ",")
       for (k = 1; k <= n; k++) {
-        if (p[k] ~ /\$/ && p[k] !~ /=/) { print "missing"; exit }
+        if (p[k] ~ /\$/ && p[k] !~ /=/) { print "missing"; done = 1; next }
       }
       print "ok"
+      done = 1
     }'
 }
 
