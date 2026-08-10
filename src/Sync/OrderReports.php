@@ -183,8 +183,52 @@ final class OrderReports
      * @param array<int, string> $itemIds
      * @param string             $q
      */
+    /** Set once a request has ensured the table, so a multi-line order pays for one DDL. */
+    private static $schemaEnsured = false;
+
+    /**
+     * Create the table if a shop upgraded into this feature rather than installing it.
+     *
+     * ⚠ WITHOUT THIS, EVERY EXISTING SHOP GETS THE DEFECT THIS RELEASE FIXES. The
+     * table is created by the adapters' `install()`, and OpenCart runs `install()`
+     * when a module is INSTALLED — never when one is upgraded. There is no module
+     * upgrade hook on either major. So a shop that already had the module would take
+     * the new files, write to a table that was never created, and lose the
+     * attribution — silently, because every checkout-path entry point is sealed in
+     * `catch (\Throwable)` and must be. A fresh install works perfectly, which is
+     * exactly why this would have passed an install-from-archive check.
+     *
+     * `CREATE TABLE IF NOT EXISTS` rather than a `SHOW TABLES` probe: one statement
+     * instead of two, and no window between the check and the create. Guarded to once
+     * per request because this sits on the checkout path — a shopper's order must not
+     * pay for a DDL round trip on every line it writes.
+     *
+     * Found on 2026-08-10 while answering "does uninstall preserve settings?", before
+     * the release was tagged. The sibling PrestaShop module carries the same guard for
+     * the same reason.
+     */
+    private function ensureSchema()
+    {
+        if (self::$schemaEnsured) {
+            return;
+        }
+
+        self::$schemaEnsured = true;
+
+        try {
+            $this->db->query(self::schema());
+        } catch (\Exception $e) {
+            // A shop whose database user cannot CREATE is not a shop we break at
+            // checkout. The write below fails, the seal catches it, and the merchant
+            // keeps their order.
+            $this->note('could not ensure the report table: ' . $e->getMessage());
+        }
+    }
+
     public function queuePending($orderId, $valueCents, $currency, array $itemIds, $q)
     {
+        $this->ensureSchema();
+
         $orderId = (int) $orderId;
         if ($orderId <= 0) {
             return;

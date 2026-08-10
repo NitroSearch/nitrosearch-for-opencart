@@ -232,6 +232,25 @@ check_attribution() {
     fi
   done
 
+  # 1b. THE TABLE MUST BE CREATABLE OUTSIDE install(). OpenCart runs a module's
+  #     install() when it is INSTALLED and never when it is UPGRADED — there is no
+  #     module upgrade hook on either major. A table created only by install()
+  #     therefore never exists on a shop that already had the module, so the write
+  #     fails, the checkout-path seal swallows it, and attribution is lost for
+  #     exactly the merchants who already use us. A fresh install works perfectly,
+  #     which is why an install-from-archive check cannot see this.
+  #
+  #     Caught on 2026-08-10 before the release was tagged, by a question about
+  #     uninstall. The sibling PrestaShop module solved it the same way and this
+  #     module had not.
+  if ! grep -qE 'CREATE TABLE IF NOT EXISTS' "$root/$REPORTS" 2>/dev/null; then
+    fail "$REPORTS does not use CREATE TABLE IF NOT EXISTS — an upgrading shop cannot get the table"
+  elif ! grep -qE 'function[[:space:]]+ensureSchema[[:space:]]*\(' "$root/$REPORTS" 2>/dev/null; then
+    fail "$REPORTS creates its table only from install() — OpenCart never re-runs install() on an UPGRADE, so every existing shop would write to a table that does not exist and lose the attribution silently"
+  elif ! awk '/function[[:space:]]+queuePending[[:space:]]*\(/,/^    }/' "$root/$REPORTS" 2>/dev/null | grep -q 'ensureSchema'; then
+    fail "$REPORTS has ensureSchema() but the queue writer never calls it — an upgrading shop still gets no table"
+  fi
+
   if ! grep -qE 'function[[:space:]]+orderReports[[:space:]]*\(' "$root/$RUNNER" 2>/dev/null; then
     fail "$RUNNER has no orderReports() accessor — every flush call site would fatal on a shopper's request"
   fi
@@ -564,6 +583,23 @@ PHP
 <?php
 final class OrderReports
 {
+    public static function schema()
+    {
+        return 'CREATE TABLE IF NOT EXISTS `x` (`order_id` INT) ENGINE=InnoDB';
+    }
+
+    private function ensureSchema()
+    {
+        $this->db->query(self::schema());
+    }
+
+    public function queuePending($orderId, $valueCents, $currency, array $itemIds, $q)
+    {
+        $this->ensureSchema();
+
+        return true;
+    }
+
     private function sendOne(array $row)
     {
         $outcome = $this->client->reportOrder(array(
@@ -667,6 +703,21 @@ PHP
   grep -v 'onOrderConfirmed' "$tmp/good/adapters/oc3/upload/catalog/controller/extension/nitrosearch/module/nitrosearch.php" \
     > "$tmp/bad/adapters/oc3/upload/catalog/controller/extension/nitrosearch/module/nitrosearch.php"
   try_evasion "one major missing a handler the other has" "adapters/oc3: no catalog controller defines"
+
+  # THE UPGRADE PATH, which a fresh install cannot show you. OpenCart runs install()
+  # on INSTALL and never on UPGRADE, so a table created only there never exists on a
+  # shop that already had the module — and the checkout-path seal makes the failure
+  # silent. This was the real state of the tree on 2026-08-10, hours before the tag.
+  spoil
+  perl -0pi -e 's/    private function ensureSchema\(\).*?\n    \}\n\n//s' \
+    "$tmp/bad/src/Sync/OrderReports.php"
+  perl -0pi -e 's/        \$this->ensureSchema\(\);\n\n//' "$tmp/bad/src/Sync/OrderReports.php"
+  try_evasion "a table only install() creates (every upgrading shop loses attribution)" "only from install()"
+
+  # THE SUBTLER HALF: the guard exists, and nothing calls it.
+  spoil
+  perl -0pi -e 's/        \$this->ensureSchema\(\);\n\n//' "$tmp/bad/src/Sync/OrderReports.php"
+  try_evasion "ensureSchema() present but the writer never calls it" "never calls it"
 
   # THE SAME FAILURE ONE STEP LATER — the sibling connector's actual incident. The
   # handler is there, it is correct, and nothing points at it.
