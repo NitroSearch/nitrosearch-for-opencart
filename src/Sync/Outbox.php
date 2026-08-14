@@ -103,12 +103,50 @@ final class Outbox
      * @param int    $objectId
      * @param string $op         'upsert' or 'delete'
      */
+    /**
+     * Create this table if the shop has never had it.
+     *
+     * ⚠ THE SAME HOLE `OrderReports` CARRIES A GUARD FOR, and for the same reason:
+     * **OpenCart runs a module's `install()` when it is INSTALLED and never when it is
+     * UPGRADED**, on either major. There is no upgrade hook. So every table and every
+     * column this module has ever wanted to add reaches a fresh install and no
+     * existing shop.
+     *
+     * The report table met exactly that and was fixed before 1.3.0 was tagged. This one
+     * escaped only because nothing has yet needed to alter it — which is not a property,
+     * it is a coincidence with a date on it. The first column added here would fail
+     * every INSERT on every shop that already had the module, and the catalogue would
+     * simply stop syncing.
+     *
+     * ONCE PER REQUEST. `CREATE TABLE IF NOT EXISTS` is cheap but the full walk calls
+     * `record()` once per product.
+     */
+    private static $schemaEnsured = false;
+
+    private function ensureSchema()
+    {
+        if (self::$schemaEnsured) {
+            return;
+        }
+
+        self::$schemaEnsured = true;
+
+        try {
+            $this->db->query(self::schema());
+        } catch (\Exception $e) {
+            // A shop whose database user cannot CREATE keeps whatever it has. Throwing
+            // here would break a merchant's product save over a sync concern.
+        }
+    }
+
     public function record($objectType, $objectId, $op = 'upsert')
     {
         $objectId = (int) $objectId;
         if ($objectId <= 0) {
             return;
         }
+
+        $this->ensureSchema();
 
         $this->db->query(
             "INSERT INTO `" . self::table() . "` SET "
