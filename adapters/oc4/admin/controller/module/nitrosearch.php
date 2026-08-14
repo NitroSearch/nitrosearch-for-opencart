@@ -47,10 +47,25 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         $token = $this->session->data['user_token'];
 
         $data = array();
-        foreach (array('heading_title', 'text_extension', 'text_edit', 'text_connected', 'text_not_connected',
-                       'text_shop_url', 'text_verify_url', 'text_verify_help', 'text_cron_url',
-                       'text_cron_help', 'text_home', 'text_share_data', 'text_share_data_help') as $key) {
-            $data[$key] = $this->language->get($key);
+        // ⚠ EVERY STRING THE LANGUAGE FILE DEFINES, DERIVED — never a list written here.
+        //
+        // This was a hardcoded array of thirteen keys, and the template uses sixteen.
+        // The four it omitted were `text_connect`, `text_refresh`, `text_sync` and
+        // `text_disconnect` — all four present in the language file, all four referenced
+        // by the template, and none of them ever assigned. Twig renders an undefined
+        // variable as the empty string, so the module shipped **four unlabelled buttons**
+        // in both archives of 1.3.0. No error, no warning, nothing in a log: a merchant
+        // simply saw a row of blank buttons and had to guess.
+        //
+        // `load->language()` returns everything the file declares, so a string added
+        // later is available to the template the moment it exists rather than the day
+        // somebody remembers this array. Same failure as every hardcoded subject list
+        // this project keeps meeting; the fix is the same one every time.
+        //
+        // Assigned BEFORE the state and URL merges below so those still win on any
+        // key that appears in both.
+        foreach ((array) $this->load->language('extension/nitrosearch/module/nitrosearch') as $key => $value) {
+            $data[$key] = $value;
         }
 
         $actions = new Actions($settings, $this->shopUrl(), new Runner($this->db));

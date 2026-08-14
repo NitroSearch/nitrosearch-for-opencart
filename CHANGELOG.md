@@ -6,6 +6,23 @@ All notable changes to this module are documented here. The format follows
 
 ## [Unreleased]
 
+## [Unreleased]
+
+### Fixed
+
+- **The module's own screen showed four blank buttons.** Connect, Refresh, Sync and Disconnect
+  rendered with no label on both OpenCart 3 and 4: the words existed in the language file and the
+  screen asked for them, but the controller passed through only a hand-written list of thirteen
+  strings that did not include them, and a missing one renders as nothing at all. The screen now
+  passes every string the language file defines, so a label added later cannot go missing the same
+  way. A new release check compares the two and refuses a build where they disagree.
+
+- **A shop that upgraded the module would not have received future database changes.** OpenCart runs
+  a module's install step when it is installed and never when it is upgraded, on either version — so
+  the sync queue's table, like the order table before it, would only ever have reached shops that
+  installed fresh. Nothing had needed to change that table yet; it is now created on first use, so
+  the next change reaches everyone.
+
 ## [1.3.0] — 2026-08-10
 
 ### Added
