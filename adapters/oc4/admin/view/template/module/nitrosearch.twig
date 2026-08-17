@@ -30,6 +30,9 @@
       <div class="card-header"><i class="fa-solid fa-magnifying-glass"></i> {{ text_edit }}</div>
       <div class="card-body">
 
+        {% if saved %}
+          <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> {{ text_saved }}</div>
+        {% endif %}
         {% if connected %}
           <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> {{ text_connected }}</div>
         {% else %}
@@ -82,6 +85,137 @@
             <div class="form-text">{{ text_share_data_help }}</div>
           </dd>
         </dl>
+
+        {# ─────────── Appearance and behaviour ───────────
+           A PLAIN FORM POST, not the AJAX the buttons above use. Those are actions
+           with a result to report; this is a settings save, and a normal submit
+           means the screen a merchant sees after saving is rendered from what was
+           actually stored rather than from what the browser believed it sent. #}
+        {% if connected %}
+        <hr>
+        <form action="{{ action_save }}" method="post">
+          <h5>{{ text_appearance }}</h5>
+          <p class="form-text">{{ text_appearance_help }}</p>
+
+          <div class="row mb-3">
+            <label for="ns-look" class="col-sm-3 col-form-label">{{ text_look }}</label>
+            <div class="col-sm-9">
+              <select name="design_look" id="ns-look" class="form-select">
+                {% for value, label in looks %}
+                  <option value="{{ value }}"{% if design_look == value %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <label for="ns-scheme" class="col-sm-3 col-form-label">{{ text_scheme }}</label>
+            <div class="col-sm-9">
+              <select name="design_scheme" id="ns-scheme" class="form-select">
+                {% for value, label in schemes %}
+                  <option value="{{ value }}"{% if design_scheme == value %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <label for="ns-corners" class="col-sm-3 col-form-label">{{ text_corners }}</label>
+            <div class="col-sm-9">
+              <select name="design_corners" id="ns-corners" class="form-select">
+                {% for value, label in corners %}
+                  <option value="{{ value }}"{% if design_corners == value %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <label for="ns-accent" class="col-sm-3 col-form-label">{{ text_accent }}</label>
+            <div class="col-sm-9">
+              {# `type=color` cannot express "unset", so the text input is the real
+                 control and the picker is a convenience beside it. #}
+              <div class="input-group">
+                <input type="color" class="form-control form-control-color" id="ns-accent-picker"
+                       value="{{ design_accent ?: '#2563eb' }}" aria-label="{{ text_accent }}">
+                <input type="text" name="design_accent" id="ns-accent" class="form-control"
+                       value="{{ design_accent }}" placeholder="#2563eb" maxlength="7">
+              </div>
+              <div class="form-text">{{ text_accent_help }}</div>
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <label for="ns-width" class="col-sm-3 col-form-label">{{ text_width }}</label>
+            <div class="col-sm-9">
+              <select name="design_width" id="ns-width" class="form-select">
+                {% for value, label in widths %}
+                  <option value="{{ value }}"{% if design_width == value %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <label for="ns-filters" class="col-sm-3 col-form-label">{{ text_filters }}</label>
+            <div class="col-sm-9">
+              <select name="design_filters" id="ns-filters" class="form-select">
+                {% for value, label in filters %}
+                  <option value="{{ value }}"{% if design_filters == value %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <h5>{{ text_behaviour }}</h5>
+
+          <div class="row mb-3">
+            <div class="col-sm-9 offset-sm-3">
+              <div class="form-check form-switch">
+                <input type="checkbox" name="results_takeover" value="1" id="ns-results"
+                       class="form-check-input"{% if results_takeover %} checked{% endif %}>
+                <label class="form-check-label" for="ns-results">{{ text_results_takeover }}</label>
+              </div>
+              <div class="form-text">{{ text_results_help }}</div>
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-sm-9 offset-sm-3">
+              <div class="form-check form-switch">
+                <input type="checkbox" name="show_badge" value="1" id="ns-badge"
+                       class="form-check-input"{% if show_badge %} checked{% endif %}>
+                <label class="form-check-label" for="ns-badge">{{ text_show_badge }}</label>
+              </div>
+              <div class="form-text">{{ text_badge_help }}</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-sm-9 offset-sm-3">
+              <button type="submit" class="btn btn-primary">{{ text_save }}</button>
+            </div>
+          </div>
+        </form>
+        {% endif %}
+
+        {% if not connected %}
+        <hr>
+        <form action="{{ action_save }}" method="post">
+          <div class="row mb-3">
+            <label for="ns-api-url" class="col-sm-3 col-form-label">{{ text_api_url }}</label>
+            <div class="col-sm-9">
+              <input type="url" name="api_url" id="ns-api-url" class="form-control" value="{{ api_url }}">
+              <div class="form-text">{{ text_api_url_help }}</div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-sm-9 offset-sm-3">
+              <button type="submit" class="btn btn-light">{{ text_save }}</button>
+            </div>
+          </div>
+        </form>
+        {% endif %}
 
       </div>
     </div>

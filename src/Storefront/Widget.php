@@ -11,6 +11,7 @@
 namespace NitroSearch\Storefront;
 
 use NitroSearch\Settings;
+use NitroSearch\Support\Design;
 
 /**
  * `window.NitroSearchConfig` plus the loader script, for the shop's `<head>`.
@@ -94,20 +95,20 @@ final class Widget
             'bundleUrl' => $bundleUrl,
             'siteUrl' => $this->siteUrl,
             'currency' => $this->currency !== '' ? $this->currency : 'USD',
-            // Results-page takeover on `product/search`. On by default, matching the
-            // other platforms; there is no merchant toggle in this version, and when
-            // one arrives it belongs here rather than in either adapter.
-            'results' => true,
+            // Results-page takeover on `product/search`. Merchant-settable since the
+            // Configure screen; the default is on, matching what this module sent
+            // when the value was hardcoded here and matching the other platforms.
+            'results' => (bool) $this->settings->get('RESULTS_TAKEOVER'),
             // OPENCART INDEXES PRODUCTS ONLY. Sending this false is not a formality:
             // the widget issues a SECOND engine query per keystroke when content is
             // on, and a shop with no indexed pages would pay for every one of them
             // and get nothing back.
             'content' => false,
-            // "Powered by NitroSearch" is OFF. A credit on a merchant's storefront
-            // must be their choice, and this module has no screen on which to make
-            // it yet — so the honest default is not to place one. The widget shows
-            // the badge unless told otherwise, so this key cannot be omitted.
-            'badge' => false,
+            // "Powered by NitroSearch" — the merchant's choice since the Configure
+            // screen, and OFF until they make it. A credit on someone else's shop is
+            // theirs to place. THE KEY CANNOT BE OMITTED either way: the widget shows
+            // the badge unless told otherwise, so an absent key means on.
+            'badge' => (bool) $this->settings->get('SHOW_BADGE'),
             // The merchant's opt-out for the anonymous usage beacon, and THIS KEY
             // CANNOT BE OMITTED EITHER. The widget declines to emit only on an
             // explicit `cfg.analytics === false`; an absent key is `undefined`,
@@ -120,6 +121,23 @@ final class Widget
             // inferred from silence.
             'analytics' => (bool) $this->settings->get('SHARE_SEARCH_DATA'),
         );
+
+        // APPEARANCE. Emitted only when the merchant has actually chosen something
+        // away from the widget's own defaults — Design returns an empty `layout` for
+        // a shop that has touched nothing, and an empty key on the wire is noise
+        // that still has to be parsed on every page load. `theme` always carries the
+        // four density tokens, because a look is a complete set (see Design).
+        $design = new Design($this->settings);
+
+        $theme = $design->theme();
+        if ($theme !== array()) {
+            $config['theme'] = $theme;
+        }
+
+        $layout = $design->layout();
+        if ($layout !== array()) {
+            $config['layout'] = $layout;
+        }
 
         // THE LOCALE IS NOT ONLY A TRANSLATION SWITCH — the widget formats prices
         // with it, so withholding it leaves every shop on generic English number

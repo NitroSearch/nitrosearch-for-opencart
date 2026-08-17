@@ -74,6 +74,15 @@ class ControllerExtensionModuleNitrosearch extends Controller
         $data['action_disconnect'] = $this->url->link('extension/module/nitrosearch/disconnect', 'user_token=' . $token, true);
         $data['action_sync'] = $this->url->link('extension/module/nitrosearch/sync', 'user_token=' . $token, true);
         $data['action_share_data'] = $this->url->link('extension/module/nitrosearch/shareData', 'user_token=' . $token, true);
+        $data['action_save'] = $this->url->link('extension/module/nitrosearch/save', 'user_token=' . $token, true);
+
+        // The appearance selects, derived from Design::choices() and labelled from
+        // the language file this controller already loaded. Never a list here.
+        $data = array_merge($data, Actions::designOptions(
+            (array) $this->load->language('extension/module/nitrosearch')
+        ));
+
+        $data['saved'] = isset($this->request->get['saved']);
 
         $data['breadcrumbs'] = array(
             array(
@@ -130,6 +139,37 @@ class ControllerExtensionModuleNitrosearch extends Controller
         $this->respondJson(function (Actions $actions) use ($on) {
             return $actions->setShareSearchData($on);
         });
+    }
+
+    /**
+     * Save the appearance and behaviour settings.
+     *
+     * A FORM POST AND A REDIRECT, not the JSON the buttons use — see the OpenCart 4
+     * build for the reasoning. The permission key is this major's own shorter route
+     * form, which is what OpenCart 3 granted at install time.
+     */
+    public function save()
+    {
+        if (!$this->user->hasPermission('modify', 'extension/module/nitrosearch')) {
+            $this->session->data['error'] = $this->language->get('error_permission');
+            $this->response->redirect($this->url->link(
+                'extension/module/nitrosearch',
+                'user_token=' . $this->session->data['user_token'],
+                true
+            ));
+
+            return;
+        }
+
+        $settings = new Settings($this->db);
+        $actions = new Actions($settings, $this->shopUrl(), new Runner($this->db));
+        $actions->saveSettings((array) $this->request->post);
+
+        $this->response->redirect($this->url->link(
+            'extension/module/nitrosearch',
+            'user_token=' . $this->session->data['user_token'] . '&saved=1',
+            true
+        ));
     }
 
     /**

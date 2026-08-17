@@ -6,6 +6,28 @@ All notable changes to this module are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A Configure screen you can actually configure.** Until now this module's screen was four buttons
+  and some read-only text: there was no way to change how the search panel looks, no way to keep your
+  theme's own results page, no way to place or remove the "Powered by" credit, and no way to correct
+  the service address without editing the database. All of that is now on the screen, on both
+  OpenCart 3 and OpenCart 4.
+
+  - **Appearance** — result density (roomy, compact, image-led, text-only), colour scheme (light,
+    dark, or match the shopper's device), corner style, an accent colour, panel width and where
+    filters appear. Label text on the accent is chosen automatically for contrast, so a pale accent
+    gets dark text rather than an unreadable white.
+  - **Storefront behaviour** — whether NitroSearch takes over the search results page, and whether
+    the credit is shown. Both were previously fixed in code and sent on every page load with no way
+    to change them; the defaults are unchanged, so an existing shop sees exactly what it saw before.
+  - **Service address** — editable, but only while the shop is disconnected. Repointing a connected
+    shop would leave its credentials, collection and search key aimed at a service that has never
+    heard of them, which looks configured and cannot sync.
+
+  Settings are stored as preset names rather than raw values, so what "compact" means can improve in
+  a later release without every shop needing to change anything.
+
 ## [1.3.1] — 2026-08-15
 
 ### Fixed
