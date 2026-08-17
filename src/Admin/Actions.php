@@ -225,6 +225,137 @@ final class Actions
     }
 
     /**
+     * Save the storefront settings the Configure screen owns.
+     *
+     * TAKES A PLAIN ARRAY, never OpenCart's request object — `src/` is copied
+     * verbatim into both archives and may not know what a request looks like. Each
+     * adapter reads its own superglobal and hands the values here.
+     *
+     * ABSENT IS NOT THE SAME AS OFF, EXCEPT FOR A CHECKBOX. An unchecked checkbox
+     * is simply not posted, so the two booleans are read as "present and truthy",
+     * which is the only reading that lets a merchant turn one OFF. Every other key
+     * is left alone when absent, so a partial POST — or a future form that renders
+     * a subset — cannot silently reset a choice the merchant made earlier.
+     *
+     * VALUES ARE VALIDATED BY {@see \NitroSearch\Support\Design::normalise()} AND
+     * REJECTED, NOT CLAMPED. These end up interpolated into CSS custom properties
+     * on a live storefront; a value outside the offered list can only come from a
+     * hand-made request, and writing a guess for it would be a worse answer than
+     * keeping what was already there.
+     *
+     * @param array<string, mixed> $posted
+     * @param bool                 $isFormPost whether the two checkboxes are meaningful
+     *
+     * @return array{ok: bool, saved: array<int, string>, rejected: array<int, string>}
+     */
+    public function saveSettings(array $posted, $isFormPost = true)
+    {
+        $values = array();
+        $rejected = array();
+
+        foreach (array_keys(\NitroSearch\Support\Design::choices()) as $key) {
+            $field = strtolower($key);
+
+            if (!array_key_exists($field, $posted)) {
+                continue;
+            }
+
+            $clean = \NitroSearch\Support\Design::normalise($key, $posted[$field]);
+
+            if ($clean === null) {
+                $rejected[] = $field;
+                continue;
+            }
+
+            $values[$key] = $clean;
+        }
+
+        if ($isFormPost) {
+            $values['RESULTS_TAKEOVER'] = !empty($posted['results_takeover']);
+            $values['SHOW_BADGE'] = !empty($posted['show_badge']);
+        }
+
+        // THE SERVICE ADDRESS, AND ONLY WHILE DISCONNECTED. This shop's key id,
+        // secret, collection and scoped search key were all issued BY the service at
+        // the current address; repointing a connected shop leaves every one of them
+        // aimed at a host that has never heard of them, and the result looks
+        // configured and cannot sync. Refusing here rather than in the template is
+        // the half that matters — the template only decides what is easy to do.
+        if (isset($posted['api_url']) && !$this->settings->isConnected()) {
+            $url = trim((string) $posted['api_url']);
+
+            // https only, and a host that is actually a host. This value is the
+            // origin every signed request goes to; downgrading it to http would put
+            // the sync secret on the wire in clear.
+            if ($url !== '' && preg_match('~^https://[a-z0-9.-]+(:[0-9]+)?(/.*)?$~i', $url)) {
+                $values['API_URL'] = rtrim($url, '/');
+            } elseif ($url !== '') {
+                $rejected[] = 'api_url';
+            }
+        }
+
+        if ($values !== array()) {
+            $this->settings->update($values);
+        }
+
+        return array(
+            'ok' => $rejected === array(),
+            'saved' => array_map('strtolower', array_keys($values)),
+            'rejected' => $rejected,
+        );
+    }
+
+    /**
+     * The `<select>` contents for the appearance form, labelled from the shop's own
+     * language file.
+     *
+     * DERIVED FROM {@see \NitroSearch\Support\Design::choices()}, so a preset added
+     * there appears on the screen without either adapter being touched. That matters
+     * more here than it looks: the option lists would otherwise be written out THREE
+     * times — once per major, once in the resolver — and this module has already
+     * shipped a release where a hand-written key list in one controller disagreed
+     * with the template it fed, producing four unlabelled buttons in both archives.
+     *
+     * A VALUE WITH NO TRANSLATION FALLS BACK TO ITS OWN NAME rather than vanishing.
+     * An option silently missing from a select is indistinguishable from a preset
+     * that was never built, and the merchant cannot choose what they cannot see —
+     * whereas `compact` rendered raw is ugly and obvious. Fail toward showing it.
+     *
+     * @param array<string, string> $lang the loaded language strings
+     *
+     * @return array<string, array<string, string>> template var => value => label
+     */
+    public static function designOptions(array $lang)
+    {
+        // key => the template variable and the `text_<x>_<value>` label prefix.
+        $groups = array(
+            'DESIGN_LOOK' => array('looks', 'look'),
+            'DESIGN_SCHEME' => array('schemes', 'scheme'),
+            'DESIGN_CORNERS' => array('corners', 'corners'),
+            'DESIGN_WIDTH' => array('widths', 'width'),
+            'DESIGN_FILTERS' => array('filters', 'filters'),
+        );
+
+        $out = array();
+
+        foreach (\NitroSearch\Support\Design::choices() as $key => $allowed) {
+            if ($allowed === array() || !isset($groups[$key])) {
+                continue;   // the accent: free text, no options
+            }
+
+            list($var, $prefix) = $groups[$key];
+            $out[$var] = array();
+
+            foreach ($allowed as $value) {
+                $stringKey = 'text_' . $prefix . '_' . $value;
+                $out[$var][$value] = isset($lang[$stringKey]) ? $lang[$stringKey] : $value;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * The two urls the Configure screen shows a merchant.
      *
      * BUILT HERE RATHER THAN IN EACH ADAPTER, and that is [D-041]'s rule being
@@ -271,6 +402,32 @@ final class Actions
             // not read back from what was stored is a control that can lie about
             // the setting it claims to show.
             'share_search_data' => (bool) $this->settings->get('SHARE_SEARCH_DATA'),
-        );
+
+            // The storefront settings, read back for the same reason. DERIVED from
+            // Design::choices() rather than listed again — the form, the save handler
+            // and this display all read one list, so a preset added there appears on
+            // the screen without a second edit. A control rendered from a hand-written
+            // list is one rename away from showing a default while the shop runs
+            // something else.
+            'results_takeover' => (bool) $this->settings->get('RESULTS_TAKEOVER'),
+            'show_badge' => (bool) $this->settings->get('SHOW_BADGE'),
+            'api_url' => $this->settings->apiUrl(),
+        ) + $this->designState();
+    }
+
+    /**
+     * The appearance choices, as `design_look => 'roomy'` and so on.
+     *
+     * @return array<string, string>
+     */
+    private function designState()
+    {
+        $out = array();
+
+        foreach (\NitroSearch\Support\Design::choices() as $key => $allowed) {
+            $out[strtolower($key)] = (string) $this->settings->get($key);
+        }
+
+        return $out;
     }
 }

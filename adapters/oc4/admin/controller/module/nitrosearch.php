@@ -77,6 +77,18 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         $data['action_disconnect'] = $this->url->link('extension/nitrosearch/module/nitrosearch.disconnect', 'user_token=' . $token);
         $data['action_sync'] = $this->url->link('extension/nitrosearch/module/nitrosearch.sync', 'user_token=' . $token);
         $data['action_share_data'] = $this->url->link('extension/nitrosearch/module/nitrosearch.shareData', 'user_token=' . $token);
+        $data['action_save'] = $this->url->link('extension/nitrosearch/module/nitrosearch.save', 'user_token=' . $token);
+
+        // The appearance selects, derived from Design::choices() and labelled from
+        // the language file this controller already loaded. Never a list here.
+        $data = array_merge($data, Actions::designOptions(
+            (array) $this->load->language('extension/nitrosearch/module/nitrosearch')
+        ));
+
+        // Rendered after a save so the merchant is told it happened. Read from the
+        // query string rather than the session because it survives the redirect
+        // without a second write, and it says nothing a URL should not carry.
+        $data['saved'] = isset($this->request->get['saved']);
 
         $data['breadcrumbs'] = [
             [
@@ -127,6 +139,39 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         $on = isset($this->request->post['share']) && $this->request->post['share'] === '1';
 
         $this->respondJson(fn (Actions $actions) => $actions->setShareSearchData($on));
+    }
+
+    /**
+     * Save the appearance and behaviour settings.
+     *
+     * A FORM POST AND A REDIRECT, not the JSON the buttons use. The buttons are
+     * actions with a result worth reporting in place; this is a settings save, and
+     * redirecting means the screen the merchant reads afterwards is rendered from
+     * what was actually stored — not from what the browser believed it sent.
+     *
+     * READS THE SUPERGLOBAL HERE so `src/` never learns what an OpenCart request
+     * is. Actions takes a plain array and decides what is acceptable.
+     */
+    public function save(): void
+    {
+        if (!$this->user->hasPermission('modify', 'extension/nitrosearch/module/nitrosearch')) {
+            $this->session->data['error'] = $this->language->get('error_permission');
+            $this->response->redirect($this->url->link(
+                'extension/nitrosearch/module/nitrosearch',
+                'user_token=' . $this->session->data['user_token']
+            ));
+
+            return;
+        }
+
+        $settings = new Settings($this->db);
+        $actions = new Actions($settings, $this->shopUrl(), new Runner($this->db));
+        $actions->saveSettings((array) $this->request->post);
+
+        $this->response->redirect($this->url->link(
+            'extension/nitrosearch/module/nitrosearch',
+            'user_token=' . $this->session->data['user_token'] . '&saved=1'
+        ));
     }
 
     /**

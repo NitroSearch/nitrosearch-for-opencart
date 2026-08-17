@@ -26,7 +26,7 @@ namespace NitroSearch;
  * pretending to a multi-store support it does not have. Surfacing a limit beats
  * silently applying one shop's settings to another's.
  */
-final class Settings
+final class Settings implements SettingsReader
 {
     /** The `code` column value for every row this module owns. */
     const CODE = 'module_nitrosearch';
@@ -79,6 +79,35 @@ final class Settings
         // which an OpenCart merchant could decline. The other two connectors had
         // this from their first release.
         'SHARE_SEARCH_DATA' => true,
+
+        // ── Storefront behaviour, merchant-settable since the Configure screen ──
+        //
+        // Both were HARDCODED in Storefront\Widget until that screen existed, and
+        // both were sent on every request with the merchant having no say. The
+        // defaults below reproduce exactly what was shipped, so an existing shop
+        // sees no change on update — the point is that it can now be changed.
+        //
+        // `results` takes over the `product/search` page. On, matching the other
+        // platforms.
+        'RESULTS_TAKEOVER' => true,
+        // "Powered by NitroSearch" on the storefront. OFF: a credit on a merchant's
+        // shop must be their choice, and until there was a screen to make that
+        // choice on, the honest default was not to place one.
+        'SHOW_BADGE' => false,
+
+        // ── Appearance (see Support\Design) ──
+        //
+        // Stored as PRESET NAMES, never as token values. The names are vocabulary
+        // for the Configure screen; Design resolves them to `--ns-*` values on the
+        // way out, so changing what "compact" means is a module release and not a
+        // migration of every shop's stored settings.
+        'DESIGN_LOOK' => 'roomy',
+        'DESIGN_SCHEME' => 'light',
+        'DESIGN_CORNERS' => 'rounded',
+        'DESIGN_ACCENT' => '',
+        'DESIGN_WIDTH' => 'auto',
+        'DESIGN_FILTERS' => 'auto',
+
         'PRODUCT_LIMIT' => 0,
         'PRODUCT_COUNT' => 0,
         'AT_LIMIT' => false,
