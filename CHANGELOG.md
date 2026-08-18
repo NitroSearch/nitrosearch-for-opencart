@@ -6,6 +6,8 @@ All notable changes to this module are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-08-18
+
 ### Added
 
 - **The search panel now speaks your shop's language.** The panel a shopper sees — its
@@ -187,6 +189,7 @@ months *after* 4.1.0.3, so neither line is a legacy one and neither is treated a
   Uninstalling only the **archive** leaves settings alone.
 
 [Unreleased]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.4.0...HEAD
+[1.5.0]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/NitroSearch/nitrosearch-for-opencart/compare/v1.2.0...v1.3.0
