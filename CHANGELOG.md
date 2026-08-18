@@ -6,6 +6,23 @@ All notable changes to this module are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The search panel now speaks your shop's language.** The panel a shopper sees — its
+  filters, its "Add to cart", its result counts — was English on every shop, whatever
+  language the shop was set to, because it is drawn by a shared component that carries
+  no translations of its own. It now receives them from the module, in 23 languages:
+  Czech, Danish, Dutch, English (UK), Finnish, French, German, Greek, Indonesian,
+  Italian, Japanese, Norwegian, Polish, Portuguese (Portugal and Brazil), Romanian,
+  Russian, Spanish, Swedish, Turkish, Ukrainian, Vietnamese and Chinese (Simplified).
+
+  Result counts agree with the language's own grammar rather than adding an "s" —
+  French says "1 produit trouvé" and "4 produits trouvés", and Romanian, Russian,
+  Polish and Czech each choose between three forms depending on the number.
+
+  Nothing to configure: a shop gets its own language automatically, and a shop in a
+  language not on that list is unchanged. Both OpenCart 3 and OpenCart 4 are covered.
+
 ## [1.4.0] — 2026-08-17
 
 ### Added
