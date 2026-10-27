@@ -128,6 +128,31 @@ final class Schema
     }
 
     /**
+     * Where this shop records a product's SKU.
+     *
+     * OpenCart 4.1.0.4 moved SKU, UPC, EAN, JAN, ISBN and MPN out of `product` and into
+     * `product_code` (one row per product and identifier, `code` naming which). 4.1.0.3
+     * carries BOTH, so the column is preferred whenever it exists: that keeps every shop
+     * this module already worked on reading exactly what it read before. Until this was
+     * asked, every product on a 4.1.0.4 shop failed to serialise on `Unknown column
+     * 'p.sku'`, and a full sync reported itself finished having indexed nothing.
+     *
+     * @return string 'column', 'code', or 'none'
+     */
+    public function skuSource()
+    {
+        if ($this->productHas('sku')) {
+            return 'column';
+        }
+
+        if ($this->hasTable('product_code')) {
+            return 'code';
+        }
+
+        return 'none';
+    }
+
+    /**
      * Where this shop records a per-product view count.
      *
      * @return string 'column' (OpenCart 3), 'table' (OpenCart 4), or 'none'

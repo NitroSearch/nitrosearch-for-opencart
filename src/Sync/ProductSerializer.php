@@ -80,7 +80,8 @@ final class ProductSerializer
             ->inStock($this->inStock($row))
             ->version($this->version($row));
 
-        $sku = trim((string) $row['sku']) !== '' ? trim((string) $row['sku']) : trim((string) $row['model']);
+        $codes = $this->codeSkus(array($productId));
+        $sku = self::skuOf($this->schema->skuSource() === 'column' ? ($row['sku'] ?? '') : ($codes[$productId] ?? ''), $row['model'] ?? '');
         if ($sku !== '') {
             $item->sku($sku);
         }
@@ -345,6 +346,62 @@ final class ProductSerializer
     }
 
     /**
+     * SKUs held in `product_code`, keyed by product id. Empty unless that is where
+     * this shop keeps them ({@see Schema::skuSource()}). One query for any number of
+     * ids, so a product with many variants is not one query per variant.
+     *
+     * The identifier's code is matched case-insensitively: OpenCart seeds it as
+     * `SKU`, and a merchant can edit identifiers.
+     *
+     * @param array<int, mixed> $productIds
+     *
+     * @return array<int, string>
+     */
+    private function codeSkus(array $productIds)
+    {
+        if ($this->schema->skuSource() !== 'code') {
+            return array();
+        }
+
+        $ids = array_values(array_unique(array_filter(array_map('intval', $productIds))));
+        if ($ids === array()) {
+            return array();
+        }
+
+        $result = $this->db->query(
+            "SELECT `product_id`, `value` FROM `" . DB_PREFIX . "product_code` "
+            . "WHERE UPPER(`code`) = 'SKU' AND `product_id` IN (" . implode(',', $ids) . ") "
+            . "ORDER BY `product_code_id`"
+        );
+
+        $skus = array();
+        foreach ($result->rows as $row) {
+            $id = (int) $row['product_id'];
+            $value = trim((string) $row['value']);
+            if ($value !== '' && !isset($skus[$id])) {
+                $skus[$id] = $value;
+            }
+        }
+
+        return $skus;
+    }
+
+    /**
+     * The stored SKU, else the model, which is what this module has always sent.
+     *
+     * @param mixed $stored
+     * @param mixed $model
+     *
+     * @return string
+     */
+    private static function skuOf($stored, $model)
+    {
+        $sku = trim((string) $stored);
+
+        return $sku !== '' ? $sku : trim((string) $model);
+    }
+
+    /**
      * OpenCart 4's variant products, folded into their parent.
      *
      * A VARIANT IS A TOP-LEVEL `product` ROW on OpenCart 4, with `master_id` pointing
@@ -372,20 +429,26 @@ final class ProductSerializer
 
         $languageId = (int) $this->context['language_id'];
 
+        // `p.sku` only where the column exists: naming it on 4.1.0.4 is a SQL error.
+        $skuColumn = $this->schema->skuSource() === 'column' ? "p.`sku`, " : '';
+
         $result = $this->db->query(
-            "SELECT p.`product_id`, p.`sku`, p.`model`, p.`price`, p.`quantity`, p.`subtract`, pd.`name` "
+            "SELECT p.`product_id`, " . $skuColumn . "p.`model`, p.`price`, p.`quantity`, p.`subtract`, pd.`name` "
             . "FROM `" . DB_PREFIX . "product` p "
             . "LEFT JOIN `" . DB_PREFIX . "product_description` pd "
             . "ON (p.`product_id` = pd.`product_id` AND pd.`language_id` = " . $languageId . ") "
             . "WHERE p.`master_id` = " . (int) $productId
         );
 
+        $codes = $this->codeSkus(array_column($result->rows, 'product_id'));
+
         $variants = array();
         foreach ($result->rows as $row) {
-            $sku = trim((string) $row['sku']) !== '' ? trim((string) $row['sku']) : trim((string) $row['model']);
+            $id = (int) $row['product_id'];
+            $sku = self::skuOf($skuColumn !== '' ? ($row['sku'] ?? '') : ($codes[$id] ?? ''), $row['model'] ?? '');
 
             $variants[] = array(
-                'id' => (int) $row['product_id'],
+                'id' => $id,
                 'sku' => $sku,
                 'price' => $this->money((string) $row['price'], $currency),
                 'in_stock' => $this->inStock($row),
