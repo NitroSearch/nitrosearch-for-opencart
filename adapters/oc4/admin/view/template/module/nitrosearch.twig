@@ -30,6 +30,12 @@
       <div class="card-header"><i class="fa-solid fa-magnifying-glass"></i> {{ text_edit }}</div>
       <div class="card-body">
 
+        {% if session_error %}
+          <div class="alert alert-danger"><i class="fa-solid fa-circle-exclamation"></i> {{ session_error }}</div>
+        {% endif %}
+        {% if save_error %}
+          <div class="alert alert-danger"><i class="fa-solid fa-circle-exclamation"></i> {{ save_error }}</div>
+        {% endif %}
         {% if saved %}
           <div class="alert alert-success"><i class="fa-solid fa-circle-check"></i> {{ text_saved }}</div>
         {% endif %}

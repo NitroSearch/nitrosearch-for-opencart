@@ -6,6 +6,25 @@ All notable changes to this module are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **OpenCart 4.1.0.4: the catalogue synced nothing.** OpenCart 4.1.0.4 moved each
+  product's SKU, UPC, EAN, JAN, ISBN and MPN out of the product table and into a
+  separate product codes table. The module still asked for the old SKU column, so
+  every product failed to send. The sync reported itself finished, and the search
+  index stayed empty. The module now reads the SKU from wherever the shop keeps it:
+  the column on OpenCart 3 and on 4.x up to 4.1.0.3 (unchanged for those shops),
+  and the product codes table on 4.1.0.4. Tested on 4.1.0.4 and 3.0.5.1, each on a
+  shop that had never had the module: connect, the full catalogue sync (including a
+  SKU stored the 4.1.0.4 way), search, add to cart from the results, checkout, and
+  a search-attributed order.
+- **A setting that was refused no longer says "Settings saved."** The Configure
+  screen confirmed every save, including one it had refused. The case you would
+  meet is the service address, which must start with `https://` because your
+  shop's sync secret is sent to it. It now says when something was not saved and
+  why. A "permission denied" message, which was being written and never shown, is
+  now shown too. Both OpenCart 3 and OpenCart 4.
+
 ## [1.5.0] — 2026-08-18
 
 ### Added
