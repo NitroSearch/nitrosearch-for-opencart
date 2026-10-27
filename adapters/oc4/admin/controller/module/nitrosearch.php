@@ -18,6 +18,7 @@ use NitroSearch\Sync\Events;
 use NitroSearch\Sync\OrderReports;
 use NitroSearch\Sync\Outbox;
 use NitroSearch\Sync\Runner;
+use NitroSearch\Support\SaveNotice;
 use NitroSearch\Support\ShopUrl;
 
 /**
@@ -89,6 +90,12 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
         // query string rather than the session because it survives the redirect
         // without a second write, and it says nothing a URL should not carry.
         $data['saved'] = isset($this->request->get['saved']);
+        $data['save_error'] = SaveNotice::message($this->request->get['rejected'] ?? '', $data);
+
+        // Written by the permission check in every action, and until now rendered
+        // nowhere, so a denied save looked like a page that simply reloaded.
+        $data['session_error'] = (string) ($this->session->data['error'] ?? '');
+        unset($this->session->data['error']);
 
         $data['breadcrumbs'] = [
             [
@@ -166,11 +173,13 @@ class Nitrosearch extends \Opencart\System\Engine\Controller
 
         $settings = new Settings($this->db);
         $actions = new Actions($settings, $this->shopUrl(), new Runner($this->db));
-        $actions->saveSettings((array) $this->request->post);
+        $result = $actions->saveSettings((array) $this->request->post);
 
+        // Only a save that refused nothing says "saved". A refused value used to be
+        // dropped under a green confirmation; see SaveNotice.
         $this->response->redirect($this->url->link(
             'extension/nitrosearch/module/nitrosearch',
-            'user_token=' . $this->session->data['user_token'] . '&saved=1'
+            'user_token=' . $this->session->data['user_token'] . ($result['ok'] ? '&saved=1' : '&rejected=' . SaveNotice::encode($result['rejected']))
         ));
     }
 

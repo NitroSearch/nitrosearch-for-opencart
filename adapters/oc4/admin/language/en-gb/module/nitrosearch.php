@@ -62,6 +62,8 @@ $_['text_show_badge']       = 'Show “Powered by NitroSearch”';
 $_['text_badge_help']       = 'Off by default — a credit on your storefront is your choice, not ours. Turning it on places a small line at the bottom of the search panel.';
 $_['text_save']             = 'Save settings';
 $_['text_saved']            = 'Settings saved.';
+$_['error_api_url']         = 'The service address was not saved: it must start with https://.';
+$_['error_not_saved']       = 'Some choices were not recognised and were left unchanged.';
 $_['text_api_url']          = 'Service address';
 $_['text_api_url_help']     = 'Leave this alone unless NitroSearch support has asked you to change it.';
 
